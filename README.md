@@ -272,10 +272,9 @@ Verdict yang mungkin:
 | `no-claim-provisioned` | path valid, tapi server belum memprovisikan Pro Trial |
 | `pat-invalid` | exchange PAT gagal (path salah/expired) |
 
-Catatan: `GET /algo/api/v2/activity` di host inference menjawab `403 Signature
-invalid` untuk identitas hasil PAT — desktop menandatanganinya dengan skema HMAC
-shared-process, bukan COSY. Panggilan itu opsional; keputusan claim diambil dari
-`eligibility` + `campaigns` yang dua-duanya jalan dengan Bearer job token.
+Catatan: `GET /algo/api/v2/activity` (host inference) jalan dengan COSY seperti
+endpoint `/algo/**` lain — dulu balas `403 Signature invalid` gara-gara bug padding
+AES-CBC di implementasi Python (Node auto PKCS#7, Python tidak). Sudah diperbaiki.
 
 Hasil terakhir untuk path yang diuji (`fuadi afrizalni`, userId `01a1d5f9-…`):
 
@@ -287,9 +286,7 @@ PAT exchange            HTTP 200   identity resolved
 verdict: no-claim-provisioned
 ```
 
-Panggilan `/algo/api/v2/activity` (list activity) 403 `Signature invalid` untuk identitas
-PAT — itu skema tanda tangan berbeda (HMAC shared-process milik desktop), bukan jalur
-keputusan claim.
+Semua empat endpoint mengembalikan HTTP 200 setelah perbaikan padding AES-CBC.
 
 Artinya: PAT-nya valid dan bisa dipakai, tapi **belum ada Pro Trial / activity yang
 diprovisikan** untuk akun itu — provisioning-nya di sisi server (cohort), bukan sesuatu yang

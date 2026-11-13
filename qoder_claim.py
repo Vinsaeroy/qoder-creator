@@ -154,6 +154,9 @@ def _rsa_encrypt_b64(key: bytes) -> str:
 
 
 def _aes_cbc_b64(key: bytes, data: bytes) -> str:
+    """AES-128-CBC with PKCS#7 padding (Node's createCipheriv pads by default)."""
+    pad = 16 - (len(data) % 16)
+    data = data + bytes([pad]) * pad
     cipher = Cipher(algorithms.AES(key), modes.CBC(key))
     enc = cipher.encryptor()
     return base64.b64encode(enc.update(data) + enc.finalize()).decode()
