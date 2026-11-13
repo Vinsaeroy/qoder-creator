@@ -225,6 +225,19 @@ python qoder_register.py --proxy http://user:pass@host:port
 
 ## 🎁 Claim Pro Trial — Account Path (`pt-…`)
 
+> **Yang menentukan "berhasil atau tidak" adalah `GET /api/v2/user/plan`.** Trial itu
+> tier plan yang di-set server (`PLAN_TIER_PRO_TRIAL`), bukan sesuatu yang di-POST ke
+> endpoint claim. Endpoint activity/campaign tetap dicek, tapi buat akun biasa isinya
+> kosong walaupun trial-nya aktif.
+
+Contoh nyata:
+
+```text
+pt-3qKYQ…  MadGullyAh27      plan_tier_name: "Pro Trial"  PLAN_TIER_PRO_TRIAL  2026-11-04 → 2026-11-18  -> pro-trial-active
+pt-bftO…   fuadi afrizalni   plan_tier_name: "Free"      PLAN_TIER_FREE       isQuotaExceeded: true    -> free-no-claim-provisioned
+```
+
+
 Menu `12` mengecek / mengambil Pro Trial memakai **path akun** Qoder. Path itu berbentuk
 `pt-xxxxxxxxxxxxxxxxxxxxxxxxxx_xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` — **PAT (Personal
 Access Token)**, bukan referral dan bukan URL. Segmen UUID di belakangnya adalah userId akun.
@@ -235,6 +248,7 @@ family *activity claim* + campaign, semuanya lewat `*.qoder.sh`:
 | Langkah | Endpoint | Auth |
 |---|---|---|
 | Path → identitas | `POST center.qoder.sh/algo/api/v3/user/jobToken?Encode=1` | static headers (appcode `cosy`) |
+| **Plan akun (yang menentukan)** | `GET center.qoder.sh/api/v2/user/plan` + `/api/v3/user/status` | `Bearer <jobToken>` |
 | Region table | `GET center.qoder.sh/algo/api/v2/service/region/endpoints` | COSY |
 | Eligibility | `GET center.qoder.sh/api/v2/activity/claim/eligibility` | `Bearer <jobToken>` |
 | Campaigns | `GET center.qoder.sh/sash/api/v1/me/campaigns` | `Bearer <jobToken>` |
@@ -266,6 +280,9 @@ Verdict yang mungkin:
 
 | Verdict | Arti |
 |---|---|
+| `pro-trial-active` | plan tier akun = Pro Trial (ini bukti claim berhasil) |
+| `paid-plan` | plan berbayar aktif |
+| `free-no-claim-provisioned` | akun Free, belum ada grant dari server |
 | `claimed` | claim POST sukses, id tercatat di `claimed` |
 | `claimable-not-claimed` | ada activity yang bisa diklaim (mode cek saja) |
 | `campaign-visible` | campaign kelihatan tapi belum `CLAIMABLE` |

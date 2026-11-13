@@ -33,7 +33,8 @@ except ImportError as _reg_err:      # numpy / pillow / requests missing
 
 # Pro Trial claim via the account path (qoder_claim.py)
 try:
-    from qoder_claim import claim_pro_trial, claim_menu, CLAIM_RESULT
+    from qoder_claim import (claim_pro_trial, claim_menu, fetch_plan,
+                             exchange_pat, CLAIM_RESULT)
     CLAIM_OK = True
 except ImportError as _claim_err:    # requests / cryptography missing
     CLAIM_OK = False
@@ -2024,10 +2025,20 @@ class QoderClientAutomation:
         if account_path and CLAIM_OK:
             print_color(f"\n[🎁] Claim Pro Trial via account path...", Colors.CYAN)
             try:
+                auth = exchange_pat(account_path, log=lambda m: print(m))
+                plan = fetch_plan(auth, log=lambda m: print(m))
+                trial_end = plan.get("trial_end") or 0
+                if trial_end:
+                    print_color("  Plan aktif sampai "
+                                + datetime.fromtimestamp(trial_end / 1000, timezone.utc)
+                                .strftime("%Y-%m-%d"), Colors.GREEN)
                 rep = claim_pro_trial(account_path, do_claim=True, log=lambda m: print(m))
                 claim_verdict = rep.verdict
                 claim_data = rep.as_dict()
-                print_color(f"  Hasil: {rep.verdict}", Colors.GREEN if rep.claimed else Colors.YELLOW)
+                claim_data["plan"] = rep.plan
+                print_color(f"  Hasil: {rep.verdict}",
+                            Colors.GREEN if (rep.claimed or rep.plan.get("is_trial"))
+                            else Colors.YELLOW)
                 for c in rep.campaigns:
                     print(f"   • {c.get('campaignKey')} status={c.get('claimStatus')} "
                           f"benefit={(c.get('benefit') or {}).get('kind')}")
@@ -2036,6 +2047,8 @@ class QoderClientAutomation:
                 elif not rep.activity_ids and not rep.campaigns:
                     print_color("  ℹ️ Belum ada Pro Trial/activity yang diprovisikan untuk akun ini",
                                 Colors.YELLOW)
+                if rep.plan.get("is_trial"):
+                    print_color(f"  🎉 Pro Trial aktif ({rep.plan.get('user_tag')})", Colors.GREEN)
             except Exception as e:
                 claim_verdict = f"error: {e}"
                 write_log(f"claim failed for {email}: {e}", "ERROR")

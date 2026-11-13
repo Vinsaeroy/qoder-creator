@@ -308,11 +308,13 @@ class ClaimReport:
     activity_ids: list = field(default_factory=list)
     claimed: list = field(default_factory=list)
     campaigns: list = field(default_factory=list)
+    plan: dict = field(default_factory=dict)
     verdict: str = "unknown"
 
     def as_dict(self) -> dict:
         return {"realm": self.realm, "userId": self.user_id, "userName": self.user_name,
-                "userType": self.user_type, "activityIds": self.activity_ids,
+                "userType": self.user_type, "plan": self.plan,
+                "activityIds": self.activity_ids,
                 "claimed": self.claimed, "campaigns": self.campaigns,
                 "verdict": self.verdict,
                 "calls": [{"label": c[0], "method": c[1], "url": c[2],
@@ -357,6 +359,47 @@ def _call(report: ClaimReport, auth: QoderAuth, label: str, method: str, url: st
     return status, text
 
 
+def fetch_plan(auth: QoderAuth, cfg: dict | None = None, proxy: str | None = None,
+               log=print) -> dict:
+    """
+    The account's real subscription state.
+
+    `/api/v2/user/plan` is what the CLI reads at startup; `/api/v3/user/status`
+    adds quota + the machine-readable `PLAN_TIER_*`. This — not the activity
+    endpoints — is where a granted Pro Trial actually shows up.
+    """
+    cfg = cfg or REALMS["intl"]
+    headers = {**static_headers(auth.machine_id),
+               "Authorization": f"Bearer {auth.security_oauth_token}",
+               "accept": "application/json"}
+    proxies = {"http": proxy, "https": proxy} if proxy else None
+    out: dict = {}
+    for key, path in (("plan", "/api/v2/user/plan"), ("status", "/api/v3/user/status")):
+        try:
+            r = requests.get(cfg["openapi"] + path, headers=headers, timeout=TIMEOUT,
+                             proxies=proxies)
+            out[key + "_http"] = r.status_code
+            out[key] = json.loads(r.text) if r.status_code == 200 else r.text[:200]
+        except Exception as e:  # noqa: BLE001
+            out[key + "_http"] = 0
+            out[key] = f"ERR {e}"
+    st = out.get("status") if isinstance(out.get("status"), dict) else {}
+    pl = out.get("plan") if isinstance(out.get("plan"), dict) else {}
+    tier = str(st.get("plan") or pl.get("user_type") or "").upper()
+    out["tier"] = tier
+    out["is_trial"] = "TRIAL" in tier
+    out["is_paid"] = bool(pl.get("is_paid_plan"))
+    out["trial_end"] = st.get("nextResetAt") or pl.get("end_date") or 0
+    out["quota"] = st.get("quota")
+    out["quota_exceeded"] = st.get("isQuotaExceeded")
+    out["user_tag"] = st.get("userTag") or pl.get("plan_tier_name") or ""
+    if log:
+        log(f"  [*] plan: {out['user_tag'] or tier or '?'} "
+            f"(paid={out['is_paid']}, quota={out['quota']}, "
+            f"exceeded={out['quota_exceeded']})")
+    return out
+
+
 def claim_pro_trial(pat: str, realm: str = "intl", do_claim: bool = False,
                     proxy: str | None = None, log=print) -> ClaimReport:
     """Exchange the PAT and walk every documented claim surface."""
@@ -366,6 +409,7 @@ def claim_pro_trial(pat: str, realm: str = "intl", do_claim: bool = False,
     rep.user_id, rep.user_name, rep.user_type = auth.user_id, auth.user_name, auth.user_type
     log(f"  [*] identity: {auth.user_id} / {auth.user_name or '-'} / {auth.user_type}")
 
+    rep.plan = fetch_plan(auth, cfg, proxy=proxy, log=log)
     _call(rep, auth, "region", "GET",
           f"{cfg['openapi']}/algo/api/v2/service/region/endpoints", proxy=proxy, log=log)
     # The inference-host activity LIST answers 403 "Signature invalid" for a
@@ -448,12 +492,16 @@ def claim_pro_trial(pat: str, realm: str = "intl", do_claim: bool = False,
 
     if rep.claimed:
         rep.verdict = "claimed"
+    elif rep.plan.get("is_trial"):
+        rep.verdict = "pro-trial-active"
+    elif rep.plan.get("is_paid"):
+        rep.verdict = "paid-plan"
     elif rep.activity_ids:
         rep.verdict = "claimable-not-claimed"
     elif credit_campaigns:
         rep.verdict = "campaign-visible"
     else:
-        rep.verdict = "no-claim-provisioned"
+        rep.verdict = "free-no-claim-provisioned"
     return rep
 
 
@@ -542,7 +590,12 @@ def claim_menu(input_fn=input, print_fn=print) -> None:
     tally: dict[str, int] = {}
     for r in reports:
         tally[r.verdict] = tally.get(r.verdict, 0) + 1
-        print_fn(f"   • {r.user_name or r.user_id or '(?)':22} {r.verdict:24}"
+        end = r.plan.get("trial_end") or 0
+        when = ""
+        if isinstance(end, (int, float)) and end > 0:
+            when = " until " + datetime.fromtimestamp(end / 1000, timezone.utc).strftime("%Y-%m-%d")
+        print_fn(f"   • {r.user_name or r.user_id or '(?)':22} {r.verdict:26}"
+                 f" [{r.plan.get('user_tag') or '-'}{when}]"
                  + (f" claimed={','.join(r.claimed)}" if r.claimed else ""))
     for k, v in sorted(tally.items(), key=lambda kv: -kv[1]):
         print_fn(f"   {v}× {k}")
