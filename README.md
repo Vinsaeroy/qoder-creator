@@ -246,11 +246,36 @@ Body request ditransform dulu: base64 → rotasi sepertiga → substitusi alfabe
 Header COSY dibangun dari AES-128-CBC (key = IV) + RSA-PKCS1v15 + md5 berantai.
 
 ```bash
-python qoder_claim.py --path pt-xxxxxxxx
-python qoder_claim.py --path pt-xxxxxxxx --claim     # benar-benar POST claim
+python qoder_claim.py --path pt-xxxxxxxx                 # cek + laporan
+python qoder_claim.py --path pt-xxxxxxxx --claim         # benar-benar POST claim
+python qoder_claim.py --paths paths.txt --claim          # batch (1 path per baris)
+python qoder_claim.py --path pt-xxxxxxxx --wait-minutes 30   # tunggu sampai claimable
 python qoder_claim.py --path pt-xxxxxxxx --realm cn
 python qoder_claim.py --path pt-xxxxxxxx --proxy http://user:pass@host:port
 ```
+
+Mode di menu `12`:
+
+| Mode | Fungsi |
+|---|---|
+| `1` | satu path — cek + laporan |
+| `2` | batch file — `EMAIL\|PASSWORD\|PATH` juga diterima, kolom terakhir dipakai |
+| `3` | tunggu sampai claimable — polling tiap 60s sampai batas menit |
+
+Verdict yang mungkin:
+
+| Verdict | Arti |
+|---|---|
+| `claimed` | claim POST sukses, id tercatat di `claimed` |
+| `claimable-not-claimed` | ada activity yang bisa diklaim (mode cek saja) |
+| `campaign-visible` | campaign kelihatan tapi belum `CLAIMABLE` |
+| `no-claim-provisioned` | path valid, tapi server belum memprovisikan Pro Trial |
+| `pat-invalid` | exchange PAT gagal (path salah/expired) |
+
+Catatan: `GET /algo/api/v2/activity` di host inference menjawab `403 Signature
+invalid` untuk identitas hasil PAT — desktop menandatanganinya dengan skema HMAC
+shared-process, bukan COSY. Panggilan itu opsional; keputusan claim diambil dari
+`eligibility` + `campaigns` yang dua-duanya jalan dengan Bearer job token.
 
 Hasil terakhir untuk path yang diuji (`fuadi afrizalni`, userId `01a1d5f9-…`):
 
@@ -261,6 +286,10 @@ PAT exchange            HTTP 200   identity resolved
 /api/v2/activity/quota/reset/latest HTTP 200  {"code":0,"msg":"ok"}
 verdict: no-claim-provisioned
 ```
+
+Panggilan `/algo/api/v2/activity` (list activity) 403 `Signature invalid` untuk identitas
+PAT — itu skema tanda tangan berbeda (HMAC shared-process milik desktop), bukan jalur
+keputusan claim.
 
 Artinya: PAT-nya valid dan bisa dipakai, tapi **belum ada Pro Trial / activity yang
 diprovisikan** untuk akun itu — provisioning-nya di sisi server (cohort), bukan sesuatu yang

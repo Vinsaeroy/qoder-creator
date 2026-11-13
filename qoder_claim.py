@@ -74,6 +74,7 @@ XcW+ML9FoCI6AOvOzwIDAQAB
 QODER_APPCODE = "cosy"
 QODER_SIG_SECRET = "d2FyLCB3YXIgbmV2ZXIgY2hhbmdlcw=="
 QODER_VERSION = os.environ.get("QODER_VERSION", "1.1.64")
+QODER_MACHINE_OS = os.environ.get("QODER_MACHINE_OS", "aarch64_macos")
 
 REALMS = {
     "intl": {
@@ -230,7 +231,7 @@ def cosy_headers(auth: QoderAuth, url: str, body: str = "",
         "authorization": f"Bearer COSY.{payload}.{signature}",
         "cosy-data-policy": "agree",
         "cosy-machinetype": "5",
-        "cosy-machineos": "linux",
+        "cosy-machineos": QODER_MACHINE_OS,
         "cosy-clienttype": "5",
         "cosy-date": date,
         "cosy-user": auth.user_id,
@@ -241,6 +242,10 @@ def cosy_headers(auth: QoderAuth, url: str, body: str = "",
         "cosy-organization-id": "",
         "cosy-organization-tags": "",
         "x-request-id": str(uuid.uuid4()),
+        "cosy-business-product": "cli",
+        "cosy-business-type": "agent",
+        "cosy-business-version": version,
+        "cosy-scene": "assistant",
         "cosy-version": version,
         "login-version": "v2",
         "appcode": QODER_APPCODE,
@@ -360,8 +365,15 @@ def claim_pro_trial(pat: str, realm: str = "intl", do_claim: bool = False,
 
     _call(rep, auth, "region", "GET",
           f"{cfg['openapi']}/algo/api/v2/service/region/endpoints", proxy=proxy, log=log)
-    _, act_text = _call(rep, auth, "activity", "GET",
-                        f"{cfg['infer']}/algo/api/v2/activity", proxy=proxy, log=log)
+    # The inference-host activity LIST answers 403 "Signature invalid" for a
+    # PAT-derived identity (the desktop signs it with the shared-process HMAC
+    # scheme, not COSY). It is optional: the authoritative surfaces for a claim
+    # decision are eligibility + campaigns below, which both answer a Bearer
+    # job token.
+    act_text = ""
+    if os.environ.get("QODER_TRY_ACTIVITY") or do_claim:
+        _, act_text = _call(rep, auth, "activity", "GET",
+                            f"{cfg['infer']}/algo/api/v2/activity", proxy=proxy, log=log)
     _, elig_text = _call(rep, auth, "eligibility", "GET",
                          f"{cfg['openapi']}/api/v2/activity/claim/eligibility",
                          proxy=proxy, log=log)
@@ -442,47 +454,126 @@ def claim_pro_trial(pat: str, realm: str = "intl", do_claim: bool = False,
     return rep
 
 
+def load_paths(path: str) -> list[str]:
+    """One PAT per line; `EMAIL|PASSWORD|PAT` lines also accepted."""
+    out: list[str] = []
+    p = Path(path)
+    text = p.read_text() if p.exists() else path
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        cand = line.split("|")[-1].strip() if "|" in line else line
+        if cand.startswith("pt-"):
+            out.append(cand)
+    return list(dict.fromkeys(out))
+
+
+def claim_batch(paths: list[str], realm: str = "intl", do_claim: bool = False,
+                proxy: str | None = None, wait_minutes: int = 0, log=print) -> list[ClaimReport]:
+    """Walk every path; with wait_minutes > 0 keep re-checking until claimable."""
+    reports: list[ClaimReport] = []
+    deadline = time.time() + wait_minutes * 60 if wait_minutes else 0
+    pending = list(paths)
+    round_no = 0
+    while pending:
+        round_no += 1
+        log(f"\n=== round {round_no}: {len(pending)} path ===")
+        still: list[str] = []
+        for i, pat in enumerate(pending, 1):
+            log(f"[{i}/{len(pending)}] {pat[:18]}…")
+            try:
+                rep = claim_pro_trial(pat, realm=realm, do_claim=do_claim, proxy=proxy, log=log)
+            except Exception as e:  # noqa: BLE001
+                rep = ClaimReport(realm=realm, verdict="pat-invalid")
+                rep.claimed.clear()
+                rep.calls.append(("exchange", "POST", "", 0, str(e)))
+                log(f"  [!] {e}")
+            reports.append(rep)
+            log(f"  => {rep.verdict}"
+                + (f" | claimed={','.join(rep.claimed)}" if rep.claimed else ""))
+            if rep.verdict == "no-claim-provisioned" and time.time() < deadline:
+                still.append(pat)
+        if not still or time.time() >= deadline:
+            break
+        log(f"  [*] {len(still)} belum diprovisikan — cek lagi dalam 60s (sampai "
+            f"{int((deadline - time.time()) // 60)} menit lagi)")
+        time.sleep(60)
+        pending = still
+    return reports
+
+
 def claim_menu(input_fn=input, print_fn=print) -> None:
     """Interactive entry used by main.py."""
-    path = input_fn("  Account path (pt-…): ").strip()
-    if not path:
-        print_fn("  [!] path kosong")
-        return
+    mode = (input_fn("  Mode [1] satu path  [2] batch file  [3] tunggu sampai claimable [1]: ")
+            .strip() or "1")
     realm = (input_fn("  Realm [intl/cn] (default intl): ").strip() or "intl").lower()
     do_claim = (input_fn("  Kirim claim sekarang? (y/n) [y]: ").strip().lower() or "y") == "y"
     proxy = input_fn("  Proxy (kosongkan jika tidak ada): ").strip() or None
 
-    print_fn(f"\n[🎁] Claim Pro Trial — realm={realm}, claim={do_claim}")
-    try:
-        rep = claim_pro_trial(path, realm=realm, do_claim=do_claim, proxy=proxy,
-                              log=print_fn)
-    except Exception as e:  # noqa: BLE001
-        _log(f"claim failed: {e}")
-        print_fn(f"  [!] gagal: {e}")
+    paths: list[str] = []
+    wait_minutes = 0
+    if mode == "2":
+        src = input_fn("  File / daftar path (1 per baris, EMAIL|PASS|PATH juga boleh): ").strip()
+        paths = load_paths(src)
+        if not paths:
+            print_fn("  [!] tidak ada path pt-… ditemukan")
+            return
+    elif mode == "3":
+        paths = [input_fn("  Account path (pt-…): ").strip()]
+        raw = input_fn("  Tunggu maksimal berapa menit? [30]: ").strip() or "30"
+        wait_minutes = max(1, int(raw)) if raw.isdigit() else 30
+    else:
+        paths = [input_fn("  Account path (pt-…): ").strip()]
+    paths = [p for p in paths if p]
+    if not paths:
+        print_fn("  [!] path kosong")
         return
 
-    print_fn(f"\n  Akun   : {rep.user_name or '-'} ({rep.user_id}) [{rep.user_type}]")
-    print_fn(f"  Hasil  : {rep.verdict}")
-    print_fn(f"  Activity ids : {', '.join(rep.activity_ids) or '(tidak ada)'}")
-    print_fn(f"  Claimed      : {', '.join(rep.claimed) or '(tidak ada)'}")
-    for c in rep.campaigns:
-        print_fn(f"   • {c.get('campaignKey')} status={c.get('claimStatus')} "
-                 f"benefit={(c.get('benefit') or {}).get('kind')}")
-    CLAIM_RESULT.write_text(json.dumps(rep.as_dict(), indent=2))
+    print_fn(f"\n[🎁] Claim Pro Trial — {len(paths)} path, realm={realm}, "
+             f"claim={do_claim}, wait={wait_minutes}m")
+    reports = claim_batch(paths, realm=realm, do_claim=do_claim, proxy=proxy,
+                          wait_minutes=wait_minutes, log=print_fn)
+
+    print_fn("\n  ── ringkasan ──")
+    tally: dict[str, int] = {}
+    for r in reports:
+        tally[r.verdict] = tally.get(r.verdict, 0) + 1
+        print_fn(f"   • {r.user_name or r.user_id or '(?)':22} {r.verdict:24}"
+                 + (f" claimed={','.join(r.claimed)}" if r.claimed else ""))
+    for k, v in sorted(tally.items(), key=lambda kv: -kv[1]):
+        print_fn(f"   {v}× {k}")
+    CLAIM_RESULT.write_text(json.dumps([r.as_dict() for r in reports], indent=2))
     print_fn(f"  📄 detail -> {CLAIM_RESULT.name}")
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Qoder Pro Trial claim via account path (PAT)")
-    ap.add_argument("--path", required=True, help="Qoder account path / PAT (pt-…)")
+    ap.add_argument("--path", action="append", default=[],
+                    help="Qoder account path / PAT (pt-…); repeatable")
+    ap.add_argument("--paths", help="file with one path per line (EMAIL|PASS|PATH ok)")
     ap.add_argument("--realm", default="intl", choices=["intl", "cn"])
     ap.add_argument("--claim", action="store_true", help="actually POST the claim")
+    ap.add_argument("--wait-minutes", type=int, default=0,
+                    help="re-check unprovisioned accounts until claimable")
     ap.add_argument("--proxy", default=None)
     a = ap.parse_args()
 
-    rep = claim_pro_trial(a.path, realm=a.realm, do_claim=a.claim, proxy=a.proxy)
-    print(json.dumps(rep.as_dict(), indent=2))
-    return 0
+    paths = list(a.path)
+    if a.paths:
+        paths += load_paths(a.paths)
+    paths = [p for p in dict.fromkeys(paths) if p]
+    if not paths:
+        ap.error("need --path pt-… or --paths <file>")
+
+    reports = claim_batch(paths, realm=a.realm, do_claim=a.claim, proxy=a.proxy,
+                          wait_minutes=a.wait_minutes)
+    CLAIM_RESULT.write_text(json.dumps([r.as_dict() for r in reports], indent=2))
+    for r in reports:
+        status = "OK " if r.claimed else "   "
+        print(f"[{status}] {r.user_name or r.user_id} -> {r.verdict}"
+              + (f" claimed={','.join(r.claimed)}" if r.claimed else ""))
+    return 0 if all(r.verdict != "pat-invalid" for r in reports) else 1
 
 
 if __name__ == "__main__":
