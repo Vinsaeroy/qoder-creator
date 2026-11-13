@@ -4,3 +4,7 @@ fake-useragent
 camoufox
 playwright
 playwright-stealth
+numpy
+pillow
+requests
+cryptography

@@ -4,6 +4,12 @@ qoder_sukses.txt
 qoder_failed.txt
 qoder_api_keys.txt
 qoder_log.txt
+qoder_registered.txt
+qoder_reg_failed.txt
+qoder_reg_log.txt
+qoder_claim_log.txt
+qoder_claim_result.json
+register_debug/
 
 # Python
 venv/

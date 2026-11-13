@@ -132,6 +132,9 @@ email2@example.com|password2
 |:--:|---|---|---|
 | `1` | Process All Accounts | 🔐 Login | Proses semua akun di `qoder_akun.txt` secara otomatis |
 | `2` | Process Single Account | 🔐 Login | Login satu akun (input email & password manual) |
+| `10` | Register via Invite Path | 📝 Register | Buat akun baru via `referral_code` (auto email + captcha + OTP) |
+| `11` | Register Batch (Invite Path) | 📝 Register | Register banyak akun sekaligus via invite path |
+| `12` | Claim Pro Trial (account path) | 🎁 Claim | Claim Pro Trial pakai **path akun** Qoder (`pt-…` / PAT) |
 | `3` | Patch Qoder Data | 🔧 Patch | Generate identitas baru & patch data aplikasi |
 | `4` | Reset Qoder Completely | 🔧 Patch | Reset aplikasi Qoder (dengan konfirmasi) |
 | `9` | Deep Reset (All Data) | 🔧 Patch | Hapus **SEMUA** data Qoder (dengan konfirmasi) |
@@ -153,8 +156,108 @@ File-file ini dibuat otomatis oleh script saat berjalan:
 | ✅ `qoder_sukses.txt` | Akun berhasil — format `email\|{data, credits}\|timestamp` |
 | ❌ `qoder_failed.txt` | Akun gagal — format `email\|error\|timestamp` |
 | 📝 `qoder_log.txt` | Log aktivitas lengkap dengan timestamp |
+| ✅ `qoder_registered.txt` | Akun hasil auto-register — `email\|password\|plan\|credits\|timestamp` |
+| ❌ `qoder_reg_failed.txt` | Auto-register gagal — `email\|stage\|error\|timestamp` |
+| 📝 `qoder_reg_log.txt` | Log khusus auto-register |
+| 🖼️ `register_debug/` | Screenshot tiap tahap (kalau gagal) |
+| 🎁 `qoder_claim_result.json` | Detail panggilan claim terakhir (per endpoint) |
+| 📝 `qoder_claim_log.txt` | Log claim Pro Trial |
 
 > 🔒 **Tips:** jangan commit file-file ini ke repository. Lihat bagian [.gitignore](#-keamanan--gitignore) di bawah.
+
+---
+
+## 📝 Auto Register — Invite Path
+
+Menu `10` / `11` membuat akun Qoder baru lewat **invite path** (referral code), bukan cuma login akun yang sudah ada.
+
+**Bentuk invite path:**
+
+```text
+https://qoder.com/users/sign-up?referral_code=pt-xxxxxxxxxxxxxxxxxxxxxxxxxx_xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+                                                    └──────────── bagian yang dipakai script ────────────┘
+```
+
+Yang diinput ke script adalah nilai `referral_code`-nya saja (diawali `pt-`). Halaman akan menampilkan
+*"You've been invited to Qoder — Sign up to get free Pro trial and 300 Credits"*.
+
+**Alur otomatis (dari bundle app `qbase/qoder 0.0.757`):**
+
+1. Buat inbox sementara via **mail.tm** (`api.mail.tm`)
+2. Buka `/users/sign-up?referral_code=<CODE>`
+3. Step 1 — first name, last name, email, setuju ToS → **Continue**
+4. Step 2 — password (email dibawa form) → **Continue**
+5. **Aliyun slider captcha** — dipecahkan lewat template matching:
+   `#aliyunCaptcha-puzzle` dicocokkan ke `#aliyunCaptcha-img`, lalu
+   `#aliyunCaptcha-sliding-slider` di-drag ke posisi gap (trajectory smoothstep + jitter)
+6. OTP dikirim ke inbox → dibaca dari mail.tm → diisi otomatis
+7. Verifikasi sukses dengan `GET /api/v1/me` (session aktif → plan + credits tercatat)
+
+**Endpoint yang dipakai:**
+
+| Endpoint | Fungsi |
+|---|---|
+| `POST /api/v1/verificationCodes` | kirim OTP — `{channel:"email", scene, email}` |
+| `POST /api/v1/users` | buat akun — `{type,email,password,code,name,invitation_code,attribution,channel_code,channel_ref,landing_id,captured_at}` |
+| `GET /api/v1/me` | bukti sukses — plan + credits |
+
+**Penggunaan langsung (tanpa menu):**
+
+```bash
+python qoder_register.py --count 1
+python qoder_register.py --code pt-xxxx... --count 5
+python qoder_register.py --headed --keep-open     # lihat browsernya
+python qoder_register.py --proxy http://user:pass@host:port
+```
+
+> ⚠️ Captcha Aliyun dinamis — kalau gagal, script otomatis minta puzzle baru sampai 6x.
+> Domain mail.tm bisa saja ditolak Qoder; ganti domain/provider di `qoder_register.py` bila perlu.
+> Delay default antar akun 10s (+jitter) supaya tidak terlalu cepat.
+
+---
+
+## 🎁 Claim Pro Trial — Account Path (`pt-…`)
+
+Menu `12` mengecek / mengambil Pro Trial memakai **path akun** Qoder. Path itu berbentuk
+`pt-xxxxxxxxxxxxxxxxxxxxxxxxxx_xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` — **PAT (Personal
+Access Token)**, bukan referral dan bukan URL. Segmen UUID di belakangnya adalah userId akun.
+
+**Kenapa bukan lewat web:** permukaan `pro-upgrade/*` sudah mati (404). Yang hidup adalah
+family *activity claim* + campaign, semuanya lewat `*.qoder.sh`:
+
+| Langkah | Endpoint | Auth |
+|---|---|---|
+| Path → identitas | `POST center.qoder.sh/algo/api/v3/user/jobToken?Encode=1` | static headers (appcode `cosy`) |
+| Region table | `GET center.qoder.sh/algo/api/v2/service/region/endpoints` | COSY |
+| Eligibility | `GET center.qoder.sh/api/v2/activity/claim/eligibility` | `Bearer <jobToken>` |
+| Campaigns | `GET center.qoder.sh/sash/api/v1/me/campaigns` | `Bearer <jobToken>` |
+| Claim activity | `POST center.qoder.sh/api/v2/activity/claim?activityId=…` | `Bearer <jobToken>` |
+| Claim campaign | `POST …/sash/api/v1/me/campaigns/{id}/claim` | `Bearer <jobToken>` |
+| Activity list | `GET api2.qoder.sh/algo/api/v2/activity` | COSY (sign body `""`) |
+
+Body request ditransform dulu: base64 → rotasi sepertiga → substitusi alfabet `_doRTgHZ…`.
+Header COSY dibangun dari AES-128-CBC (key = IV) + RSA-PKCS1v15 + md5 berantai.
+
+```bash
+python qoder_claim.py --path pt-xxxxxxxx
+python qoder_claim.py --path pt-xxxxxxxx --claim     # benar-benar POST claim
+python qoder_claim.py --path pt-xxxxxxxx --realm cn
+python qoder_claim.py --path pt-xxxxxxxx --proxy http://user:pass@host:port
+```
+
+Hasil terakhir untuk path yang diuji (`fuadi afrizalni`, userId `01a1d5f9-…`):
+
+```text
+PAT exchange            HTTP 200   identity resolved
+/api/v2/activity/claim/eligibility  HTTP 200  {"code":0,"data":[]}
+/sash/api/v1/me/campaigns           HTTP 200  {"claimable":false,"campaigns":[]}
+/api/v2/activity/quota/reset/latest HTTP 200  {"code":0,"msg":"ok"}
+verdict: no-claim-provisioned
+```
+
+Artinya: PAT-nya valid dan bisa dipakai, tapi **belum ada Pro Trial / activity yang
+diprovisikan** untuk akun itu — provisioning-nya di sisi server (cohort), bukan sesuatu yang
+bisa dipaksa dari klien. Detail tiap panggilan ditulis ke `qoder_claim_result.json`.
 
 ---
 
@@ -168,6 +271,10 @@ File-file ini dibuat otomatis oleh script saat berjalan:
 | Komponen | Keterangan |
 |---|---|
 | `QoderClientAutomation` | Otomasi login client via Playwright (stealth, UI interaction) |
+| `qoder_register.py` | Auto-register akun baru via invite path (mail.tm + Aliyun slider solver) |
+| `qoder_claim.py` | Claim Pro Trial via path akun (`pt-…`): PAT→jobToken, COSY signing, activity/campaign claim |
+| `auto_register()` / `register_menu()` | Driver + menu untuk auto-register |
+| `solve_aliyun_slider()` | Pecahkan captcha slider Aliyun (template matching + drag) |
 | `QoderPatcher` | Patching data aplikasi & generate identitas baru per platform |
 | `get_platform_config()` | Konfigurasi path aplikasi Qoder per platform |
 | `init_platform()` | Inisialisasi path berdasarkan platform yang dipilih |

@@ -22,6 +22,23 @@ from typing import Optional, Dict, List, Any
 from datetime import datetime, timezone
 from pathlib import Path
 
+# Auto-register via invite path (qoder_register.py)
+try:
+    from qoder_register import (auto_register, register_menu, DEFAULT_REFERRAL_CODE,
+                                REGISTERED_FILE, REGISTER_FAILED_FILE)
+    REGISTER_OK = True
+except ImportError as _reg_err:      # numpy / pillow / requests missing
+    REGISTER_OK = False
+    REGISTER_ERR = str(_reg_err)
+
+# Pro Trial claim via the account path (qoder_claim.py)
+try:
+    from qoder_claim import claim_pro_trial, claim_menu, CLAIM_RESULT
+    CLAIM_OK = True
+except ImportError as _claim_err:    # requests / cryptography missing
+    CLAIM_OK = False
+    CLAIM_ERR = str(_claim_err)
+
 # ================= ANSI COLORS =================
 class Colors:
     RED = '\033[91m'
@@ -2259,6 +2276,13 @@ async def main():
 ║  1.  Process All Accounts                               ║
 ║  2.  Process Single Account                            ║
 ║                                                          ║
+║  {Colors.CYAN}AUTO REGISTER{Colors.WHITE}:                                     ║
+║  10. Register via Invite Path                           ║
+║  11. Register Batch (Invite Path)                       ║
+║                                                          ║
+║  {Colors.CYAN}PRO TRIAL CLAIM{Colors.WHITE}:                                   ║
+║  12. Claim Pro Trial (account path / PAT)               ║
+║                                                          ║
 ║  {Colors.CYAN}PATCH & RESET{Colors.WHITE}:                                   ║
 ║  3.  Patch Qoder Data                                   ║
 ║  4.  Reset Qoder Completely                             ║
@@ -2274,7 +2298,7 @@ async def main():
 ║  0.  Exit                                                ║
 ╚═══════════════════════════════════════════════════════════╝{Colors.RESET}
 """)
-        choice = input(f"{Colors.YELLOW}Pilih (0-9): {Colors.RESET}").strip()
+        choice = input(f"{Colors.YELLOW}Pilih (0-12): {Colors.RESET}").strip()
         
         if choice == "0":
             print_color("👋 Terima kasih!", Colors.GREEN)
@@ -2340,6 +2364,44 @@ async def main():
             confirm = input("  ⚠️ Deep Reset - Menghapus SEMUA data Qoder? (y/n): ").strip().lower()
             if confirm == 'y':
                 reset_qoder_deep()
+        elif choice in ("10", "11"):
+            if not REGISTER_OK:
+                print_color(f"[!] Auto-register tidak tersedia: {REGISTER_ERR}", Colors.RED)
+                print_color("    pip install numpy pillow requests playwright", Colors.YELLOW)
+                continue
+            if choice == "10":
+                print_color("\n[📝] Register via Invite Path", Colors.CYAN)
+                print(f"  Format invite path: referral_code yang dipakai di")
+                print(f"  https://qoder.com/users/sign-up?referral_code=<CODE>")
+                register_menu()
+            else:
+                print_color("\n[📝] Register Batch (Invite Path)", Colors.CYAN)
+                code = input(f"  Referral code: ").strip() or DEFAULT_REFERRAL_CODE
+                raw = input("  Jumlah akun [5]: ").strip() or "5"
+                try:
+                    count = max(1, int(raw))
+                except ValueError:
+                    count = 5
+                headed = input("  Tampilkan browser? (y/n) [n]: ").strip().lower() == 'y'
+                proxy = input("  Proxy (kosongkan jika tidak ada): ").strip() or None
+                results = auto_register(count=count, referral_code=code,
+                                        headless=not headed, proxy=proxy,
+                                        log=lambda m: print(m))
+                okc = sum(1 for r in results if r.ok)
+                print_color(f"\n  {'✅' if okc else '❌'} {okc}/{count} sukses", Colors.GREEN if okc else Colors.RED)
+                for r in results:
+                    print(f"   {'✅' if r.ok else '❌'} {r.email} — {r.stage}: {r.detail}")
+                if okc:
+                    print_color(f"  📄 Hasil -> {REGISTERED_FILE.name}", Colors.CYAN)
+        elif choice == "12":
+            if not CLAIM_OK:
+                print_color(f"[!] Claim Pro Trial tidak tersedia: {CLAIM_ERR}", Colors.RED)
+                print_color("    pip install requests cryptography", Colors.YELLOW)
+                continue
+            print_color("\n[🎁] Claim Pro Trial — account path (pt-…)", Colors.CYAN)
+            print(f"  Path akun Qoder (PAT, diawali pt-) dipakai untuk")
+            print(f"  exchange jobToken lalu claim activity/campaign di qoder.sh")
+            claim_menu()
         else:
             print_color("[!] Pilihan tidak valid", Colors.RED)
 
