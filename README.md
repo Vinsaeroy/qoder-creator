@@ -118,7 +118,14 @@ Buat file `qoder_akun.txt` di folder yang sama dengan `main.py`, satu akun per b
 ```text
 email1@example.com|password1
 email2@example.com|password2
+email3@example.com|password3|pt-xxxxxxxxxxxxxxxxxxxxxxxxxx_xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 ```
+
+> Kolom ke-3 **opsional**: path akun Qoder (`pt-…`). Isi kalau ingin Pro Trial
+> benar-benar di-claim/diverifikasi lewat API saat proses login (menu `1`/`2`).
+> Tanpa kolom itu, script hanya menjalankan login desktop dan **tidak** bisa
+> membuktikan claim — hasil lama yang selalu melaporkan "300 credits" adalah
+> nilai default lokal, bukan hasil claim.
 
 > ⚠️ **Format wajib:** `EMAIL|PASSWORD` dipisahkan karakter `|`
 
@@ -130,7 +137,7 @@ email2@example.com|password2
 
 | No | Menu | Kategori | Keterangan |
 |:--:|---|---|---|
-| `1` | Process All Accounts | 🔐 Login | Proses semua akun di `qoder_akun.txt` secara otomatis |
+| `1` | Process All Accounts | 🔐 Login | Proses semua akun di `qoder_akun.txt` + claim Pro Trial lewat account path |
 | `2` | Process Single Account | 🔐 Login | Login satu akun (input email & password manual) |
 | `10` | Register via Invite Path | 📝 Register | Buat akun baru via `referral_code` (auto email + captcha + OTP) |
 | `11` | Register Batch (Invite Path) | 📝 Register | Register banyak akun sekaligus via invite path |

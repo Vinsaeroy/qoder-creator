@@ -220,13 +220,24 @@ def write_log(message: str, level: str = "INFO"):
         f.write(f"[{timestamp}] [{level}] {message}\n")
 
 def load_accounts():
-    """Load accounts from file"""
+    """Load accounts from file.
+
+    Format: EMAIL|PASSWORD[|ACCOUNT_PATH]
+    ACCOUNT_PATH opsional = path akun Qoder (PAT, `pt-…`) yang dipakai untuk
+    claim Pro Trial lewat API; kalau kosong, claim diverifikasi lewat desktop.
+    """
     try:
         with open(AKUN_FILE) as f:
-            return [{
-                "email": l.split("|")[0].strip(),
-                "password": l.split("|")[1].strip()
-            } for l in f if "|" in l and len(l.split("|")) >= 2]
+            out = []
+            for l in f:
+                parts = [p.strip() for p in l.split("|")]
+                if len(parts) >= 2 and parts[0]:
+                    out.append({
+                        "email": parts[0],
+                        "password": parts[1],
+                        "path": parts[2] if len(parts) >= 3 and parts[2] else "",
+                    })
+            return out
     except FileNotFoundError:
         write_log(f"File {AKUN_FILE} tidak ditemukan", "ERROR")
         return []
@@ -249,7 +260,10 @@ def remove_account(email):
     with open(AKUN_FILE, "w") as f:
         for a in accs:
             if a["email"] != email:
-                f.write(f"{a['email']}|{a['password']}\n")
+                row = f"{a['email']}|{a['password']}"
+            if a.get("path"):
+                row += f"|{a['path']}"
+            f.write(row + "\n")
 
 def load_processed_emails():
     """Load emails that have been processed successfully"""
@@ -1976,7 +1990,8 @@ class QoderClientAutomation:
         
         return 300  # Default Pro Trial credits
     
-    async def run_client_login(self, email: str, password: str) -> Optional[Dict[str, Any]]:
+    async def run_client_login(self, email: str, password: str,
+                               account_path: str = "") -> Optional[Dict[str, Any]]:
         """Main client login process"""
         print(f"\n{Colors.CYAN}{'='*50}{Colors.RESET}")
         print(f"{Colors.CYAN}💻 QODER CLIENT LOGIN for {email}{Colors.RESET}")
@@ -2000,21 +2015,49 @@ class QoderClientAutomation:
             save_failed(email, "Login failed")
             return None
         
-        # Check credits after login
-        credits = await self.check_credits_after_login()
-        print_color(f"\n[💰] Credits: {credits}", Colors.CYAN)
-        
-        if credits >= 300:
-            print_color(f"  🎉 Pro Trial + 300 Credits claimed!", Colors.GREEN)
+        # ── Claim Pro Trial ──────────────────────────────────────────────
+        # Kebenaran claim hanya bisa dibuktikan lewat API (path akun / PAT).
+        # Tanpa path, angka dari lokal desktop hanyalah default — jangan
+        # dilaporkan sebagai "claimed".
+        claim_verdict = None
+        claim_data: Dict[str, Any] = {}
+        if account_path and CLAIM_OK:
+            print_color(f"\n[🎁] Claim Pro Trial via account path...", Colors.CYAN)
+            try:
+                rep = claim_pro_trial(account_path, do_claim=True, log=lambda m: print(m))
+                claim_verdict = rep.verdict
+                claim_data = rep.as_dict()
+                print_color(f"  Hasil: {rep.verdict}", Colors.GREEN if rep.claimed else Colors.YELLOW)
+                for c in rep.campaigns:
+                    print(f"   • {c.get('campaignKey')} status={c.get('claimStatus')} "
+                          f"benefit={(c.get('benefit') or {}).get('kind')}")
+                if rep.claimed:
+                    print_color(f"  🎉 CLAIMED: {', '.join(rep.claimed)}", Colors.GREEN)
+                elif not rep.activity_ids and not rep.campaigns:
+                    print_color("  ℹ️ Belum ada Pro Trial/activity yang diprovisikan untuk akun ini",
+                                Colors.YELLOW)
+            except Exception as e:
+                claim_verdict = f"error: {e}"
+                write_log(f"claim failed for {email}: {e}", "ERROR")
+                print_color(f"  [!] Claim gagal: {e}", Colors.RED)
+        elif account_path and not CLAIM_OK:
+            print_color(f"  [!] Claim module tidak tersedia: {CLAIM_ERR}", Colors.RED)
         else:
-            print_color(f"  ⚠️ Credits: {credits} (maybe not claimed yet)", Colors.YELLOW)
-        
+            print_color("  ℹ️ Tidak ada account path (kolom ke-3 qoder_akun.txt) — "
+                        "claim tidak bisa diverifikasi lewat API", Colors.YELLOW)
+
+        # Local desktop credit file (informational only)
+        local_credits = await self.check_credits_after_login()
+        credits = int(claim_data.get("credits") or 0) or local_credits
+
         # Save results
-        data = {"credits": credits, "email": email, "client_login": True, "platform": PLATFORM_NAME}
+        data = {"credits": credits, "email": email, "client_login": True,
+                "platform": PLATFORM_NAME, "claim_verdict": claim_verdict,
+                "claimed": claim_data.get("claimed", [])}
         save_success(email, data)
         remove_account(email)
-        
-        return {"success": True, "credits": credits}
+
+        return {"success": True, "credits": credits, "claim_verdict": claim_verdict}
 
 # ================= RESET FUNCTIONS =================
 
@@ -2209,7 +2252,7 @@ async def process_all_client(headless: bool = True):
         print(f"\n{Colors.CYAN}[{i}/{len(accounts)}] {acc['email']}{Colors.RESET}")
         
         bot = QoderClientAutomation(headless=headless, platform_type=SELECTED_PLATFORM)
-        result = await bot.run_client_login(acc["email"], acc["password"])
+        result = await bot.run_client_login(acc["email"], acc["password"], acc.get("path", ""))
         
         if result and result.get("success"):
             success += 1
@@ -2308,9 +2351,10 @@ async def main():
         elif choice == "2":
             email = input("  Email: ").strip()
             password = input("  Password: ").strip()
+            account_path = input("  Account path / PAT (pt-…, opsional): ").strip()
             if email and password:
                 bot = QoderClientAutomation(headless=True, platform_type=SELECTED_PLATFORM)
-                await bot.run_client_login(email, password)
+                await bot.run_client_login(email, password, account_path)
         elif choice == "3":
             patcher = QoderPatcher(SELECTED_PLATFORM)
             patcher.patch_qoder_data()
