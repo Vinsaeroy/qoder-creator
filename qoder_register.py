@@ -160,7 +160,8 @@ class Mailbox:
         try:
             typ, data = box.search(None, "ALL")
             out = []
-            for num in (data[0].split()[-10:] if data and data[0] else []):
+            nums = (data[0].split()[-15:] if data and data[0] else [])[::-1]   # newest first
+            for num in nums:
                 out.append({"id": num.decode(), "subject": "", "idx": 0})
             return out
         finally:
@@ -174,7 +175,7 @@ class Mailbox:
         try:
             typ, data = box.fetch(mid.encode(), "(RFC822)")
             msg = email.message_from_bytes(data[0][1])
-            parts = [msg.get("Subject", "")]
+            parts = [msg.get("Subject", ""), msg.get("To", ""), msg.get("Date", "")]
             if msg.is_multipart():
                 for part in msg.walk():
                     if part.get_content_type() in ("text/plain", "text/html"):
@@ -364,6 +365,9 @@ def wait_for_code(mb: Mailbox, timeout: int = MAIL_WAIT, log=None) -> str | None
                 txt = mb.body(m["id"])
                 if not re.search(r"qoder", (m.get("subject", "") + txt).lower()):
                     continue
+                # on a shared real inbox only the mail addressed to *this* tag counts
+                if mb.kind == "imap" and mb.address and mb.address.lower() not in txt.lower():
+                    continue
                 flat = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", txt, flags=re.S)
                 flat = re.sub(r"<[^>]+>", " ", flat)
                 flat = re.sub(r"&nbsp;?", " ", flat)
@@ -391,6 +395,9 @@ def wait_for_code(mb: Mailbox, timeout: int = MAIL_WAIT, log=None) -> str | None
                         sc += 2
                     return sc - pos / 100000.0        # earlier wins ties
 
+                six = [r for r in runs if len(r[1]) == 6]
+                if six:
+                    runs = six                       # Qoder codes are 6 digits
                 runs.sort(key=score, reverse=True)
                 if score(runs[0]) > 0:
                     return runs[0][1]
