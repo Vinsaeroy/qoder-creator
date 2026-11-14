@@ -970,7 +970,8 @@ def register_one(browser, referral_code: str = DEFAULT_REFERRAL_CODE,
 def auto_register(count: int = 1, referral_code: str = DEFAULT_REFERRAL_CODE,
                   headless: bool = True, delay: float = 10.0, proxy: str | None = None,
                   keep_open: bool = False, log=None,
-                  mail_provider: str = MAIL_PROVIDER) -> list[RegisterResult]:
+                  mail_provider: str = MAIL_PROVIDER,
+                  retries: int = 3) -> list[RegisterResult]:
     """Register `count` accounts. Returns one RegisterResult per attempt."""
     from playwright.sync_api import sync_playwright
 
@@ -986,11 +987,18 @@ def auto_register(count: int = 1, referral_code: str = DEFAULT_REFERRAL_CODE,
         )
         try:
             for i in range(1, count + 1):
-                _p(f"\n=== [{i}/{count}] referral_code={referral_code} ===", log)
-                r = register_one(browser, referral_code, keep_open=keep_open, log=log,
-                                 mail_provider=mail_provider)
-                _p(f"[{'OK ' if r.ok else 'FAIL'}] {r.email} stage={r.stage} "
-                   f"plan={r.plan} credits={r.credits} :: {r.detail}", log)
+                r = None
+                for attempt in range(1, retries + 1):
+                    _p(f"\n=== [{i}/{count}] attempt {attempt}/{retries} "
+                       f"referral_code={referral_code} ===", log)
+                    r = register_one(browser, referral_code, keep_open=keep_open,
+                                     log=log, mail_provider=mail_provider)
+                    _p(f"[{'OK ' if r.ok else 'FAIL'}] {r.email} stage={r.stage} "
+                       f"plan={r.plan} credits={r.credits} :: {r.detail}", log)
+                    if r.ok:
+                        break
+                    # a stale/failed attempt leaves nothing useful behind
+                    time.sleep(random.uniform(3, 7))
                 results.append(r)
                 if i < count:
                     time.sleep(delay + random.uniform(0, 6))
@@ -1039,11 +1047,14 @@ if __name__ == "__main__":
     ap.add_argument("--keep-open", action="store_true")
     ap.add_argument("--proxy", default=None)
     ap.add_argument("--delay", type=float, default=10.0)
-    ap.add_argument("--mail", default=MAIL_PROVIDER, choices=["imap", "inboxes", "mailnesia", "tmplol", "mailtm"],
-                    help="disposable-mail provider")
+    ap.add_argument("--mail", default=MAIL_PROVIDER,
+                    choices=["imap", "inboxes", "mailnesia", "tmplol", "mailtm"],
+                    help="mailbox provider")
+    ap.add_argument("--retries", type=int, default=3,
+                    help="attempts per account (captcha is ~70%%)")
     a = ap.parse_args()
 
     rs = auto_register(count=a.count, referral_code=a.code, headless=not a.headed,
                        delay=a.delay, proxy=a.proxy, keep_open=a.keep_open,
-                       mail_provider=a.mail)
+                       mail_provider=a.mail, retries=a.retries)
     print(json.dumps([r.as_dict() for r in rs], indent=2))

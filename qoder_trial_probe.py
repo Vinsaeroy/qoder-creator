@@ -203,7 +203,7 @@ def trial_flip(referral: str, realm: str = "intl", minutes: int = 45,
                  "flip": None, "observations": []}
     log(f"[flip] registering a fresh account through referral_code={referral[:18]}…")
     res = QR.auto_register(count=1, referral_code=referral, headless=False,
-                           mail_provider="imap", log=log)[0]
+                           mail_provider="imap", retries=4, log=log)[0]
     out["registered"] = res.as_dict()
     if not res.ok:
         out["flip"] = "not-registered"

@@ -1,15 +1,15 @@
 {
   "referral": "pt-3qKYQG3aZdyQ6I5ENwpnKu0u_01a1a4c3-cd3a-75fe-a816-26191226a630",
   "registered": {
-    "email": "fuadiafrizalni+qiwyjpfr1@gmail.com",
-    "password": "tC52rCtXX&nNKW",
+    "email": "fuadiafrizalni+qguum73e0@gmail.com",
+    "password": "sREtyYK59&Z1#d",
     "ok": false,
-    "stage": "verify",
-    "detail": "registered but /me -> 401",
+    "stage": "captcha",
+    "detail": "slider not solved",
     "plan": null,
     "credits": null,
     "user_id": null,
-    "started": "2026-11-14T02:55:38.507358+00:00"
+    "started": "2026-11-14T03:07:36.993350+00:00"
   },
   "before": null,
   "after": null,
