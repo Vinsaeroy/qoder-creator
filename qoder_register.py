@@ -316,15 +316,36 @@ def _create_mailnesia() -> Mailbox:
 IMAP_ACCOUNT = os.environ.get("QREG_IMAP", "")   # user@gmail.com:app-password
 
 
+def _dot_variant(local: str) -> str:
+    """
+    Gmail ignores dots, so `first.last@` and `f.i.r.s.t.last@` land in the same
+    inbox while Qoder sees a different address.
+
+    Qoder's sign-in form rejects `+` addresses ("Please provide a valid email"),
+    which is why registration uses dots rather than plus-addressing.
+    """
+    base = local.replace(".", "")
+    if len(base) < 3:
+        base = base + "qoder"
+    n = random.randint(1, min(4, len(base) - 1))
+    positions = sorted(random.sample(range(1, len(base)), n))
+    out, prev = [], 0
+    for pos in positions:
+        out.append(base[prev:pos])
+        prev = pos
+    out.append(base[prev:])
+    dotted = ".".join(p for p in out if p)
+    return dotted or base
+
+
 def _create_imap() -> Mailbox:
-    """Plus-addressed real mailbox: `user+qoderN@gmail.com`, same inbox."""
+    """Dot-variant of a real mailbox: `f.i.r.s.t@…` -> same inbox, new address."""
     if not IMAP_ACCOUNT or ":" not in IMAP_ACCOUNT:
         raise RuntimeError("set QREG_IMAP=user@host:app-password")
     addr, pw = IMAP_ACCOUNT.split(":", 1)
     pw = pw.replace(" ", "")          # Gmail shows app passwords in 4 spaced groups
     local, domain = addr.split("@", 1)
-    tag = "q" + "".join(random.choice(string.ascii_lowercase + string.digits) for _ in range(8))
-    return Mailbox(f"{local}+{tag}@{domain}", pw, kind="imap")
+    return Mailbox(f"{_dot_variant(local)}@{domain}", pw, kind="imap")
 
 
 def new_mailbox(provider: str = "inboxes") -> Mailbox:

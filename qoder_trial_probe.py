@@ -161,6 +161,25 @@ def _read_code(address: str, timeout: int = 150) -> str | None:
     return QR.wait_for_code(mb, timeout=timeout)
 
 
+
+def _solve_captcha_if_present(page, log=print, attempts: int = 4) -> bool:
+    """Qoder shows the Aliyun slider on sign-in too, not only on signup."""
+    import qoder_register as QR
+
+    try:
+        page.wait_for_selector("#captcha-element", timeout=8000)
+    except Exception:
+        return False
+    log("  [web] captcha appeared — solving")
+    try:
+        page.click("#aliyunCaptcha-captcha-body", timeout=4000)
+    except Exception:
+        pass
+    ok = QR.solve_aliyun_slider(page, attempts=attempts, log=log, seen_requests=[])
+    log(f"  [web] captcha {'solved' if ok else 'not solved'}")
+    return ok
+
+
 def web_plan(email: str, password: str, log=print) -> dict:
     """
     Sign in on qoder.com with email + password and read the plan through the
@@ -185,23 +204,59 @@ def web_plan(email: str, password: str, log=print) -> dict:
             time.sleep(2.5)
 
             # step 2a: password if the form asks for it
-            pwd = page.query_selector("#basic_password")
+            # `#basic_password` exists but stays hidden; the credential step
+            # renders the real field as `#password_password`.
+            try:
+                page.wait_for_selector("#password_password, #basic_password", state="visible",
+                                       timeout=15_000)
+            except Exception:
+                pass
+            pwd = page.query_selector("#password_password") or page.query_selector("#basic_password")
             if pwd and pwd.is_visible():
+                pwd.click()
                 pwd.fill(password)
-                for label in ("Sign in", "Continue", "Log in"):
-                    try:
-                        page.get_by_role("button", name=re.compile(label, re.I)).first.click(timeout=3000)
-                        break
-                    except Exception:
+                got = pwd.input_value()
+                if got != password:
+                    page.keyboard.type(password, delay=25)
+                    got = pwd.input_value()
+                log(f"  [web] password field len={len(got)}")
+                # Submit, and re-submit after the captcha gate: Qoder shows the
+                # slider INSTEAD of completing the sign-in, then expects the
+                # button again.
+                for attempt in range(1, 4):
+                    clicked = False
+                    for label in ("Sign in", "Continue", "Log in"):
+                        try:
+                            page.get_by_role("button", name=re.compile(f"^{label}$", re.I)) \
+                                .first.click(timeout=4000)
+                            clicked = True
+                            break
+                        except Exception:
+                            continue
+                    if not clicked:
+                        page.keyboard.press("Enter")
+                    log(f"  [web] submit {attempt} (clicked={clicked})")
+                    time.sleep(2.5)
+                    if page.query_selector("#captcha-element"):
+                        _solve_captcha_if_present(page, log=log)
+                        time.sleep(2)
                         continue
+                    if not page.query_selector("#password_password"):
+                        break
+                    time.sleep(2)
             else:
                 # step 2b: passwordless — ask for a code and read it from the mailbox
-                for label in ("Send Code", "Send code", "Get code"):
+                for label in ("Verification code", "Send Code", "Send code", "Get code"):
                     try:
                         page.get_by_role("button", name=re.compile(label, re.I)).first.click(timeout=3000)
                         break
                     except Exception:
-                        continue
+                        try:
+                            page.get_by_text(re.compile(label, re.I)).first.click(timeout=3000)
+                            break
+                        except Exception:
+                            continue
+                _solve_captcha_if_present(page, log=log)
                 code = _read_code(email)
                 if code:
                     boxes = page.query_selector_all("input[maxlength='1']")
@@ -212,12 +267,19 @@ def web_plan(email: str, password: str, log=print) -> dict:
                         f = page.query_selector("input[placeholder*='code' i]")
                         if f:
                             f.fill(code)
-                    time.sleep(3)
-            time.sleep(6)
+                log(f"  [web] used the code path (code={'yes' if code else 'no'})")
+
+            # wait until the session actually exists
+            for _ in range(15):
+                time.sleep(2)
+                probe = ctx.request.get("https://qoder.com/api/v1/me",
+                                        headers={"Accept": "application/json"})
+                if probe.ok:
+                    break
             r = ctx.request.get("https://qoder.com/api/v1/me/userplan",
                                 headers={"Accept": "application/json"})
             out["login"] = "ok" if r.ok else f"http{r.status}"
-            out["plan"] = r.json() if r.ok else r.text[:300]
+            out["plan"] = r.json() if r.ok else r.text()[:300]
         except Exception as e:  # noqa: BLE001
             out["login"] = f"error: {e}"
         finally:

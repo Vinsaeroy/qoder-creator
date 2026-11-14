@@ -1,0 +1,35 @@
+{
+  "email": "fuadi.a.fr.izalni@gmail.com",
+  "started": "2026-11-14T03:57:10.023135+00:00",
+  "plan_before": {
+    "tier": null,
+    "raw": "{\"errorCode\":\"Unauthorized\",\"errorMessage\":\"User not authenticated\",\"requestId\":\"8bce3cd6-9fab-4e8a-8c17-9726df19630b\"}\n",
+    "login": "http401"
+  },
+  "device_url": "https://qoder.com/device/selectAccounts?challenge=M0bdIPsmmXDkNSW0qXI_2uEGHnDjbDVYHoZWeWyVg1s&challenge_method=S256&nonce=94b0f4a2-b151-4fa9-8a06-02fdd420b1a8&machine_id=33570c71-ec48-4507-b18b-558dc1d53c45&client_id=e883ade2-e6e3-4d6d-adf7-f92ceff5fdcb&machine_token=P1gA0mK93vCG-p8sqxWi4YYqNIqpC7M63gcHfmNjSyF54Lp_ZvyGhV1ADErbOt6Fci1x9Wr_SzDHRDrm0QaSofRT",
+  "browser": "approved",
+  "cli_login": " in your browser to sign in:\n\n  https://qoder.com/device/selectAccounts?challenge=M0bdIPsmmXDkNSW0qXI_2uEGHnDjbDVYHoZWeWyVg1s&challenge_method=S256&nonce=94b0f4a2-b151-4fa9-8a06-02fdd420b1a8&machine_id=33570c71-ec48-4507-b18b-558dc1d53c45&client_id=e883ade2-e6e3-4d6d-adf7-f92ceff5fdcb&machine_token=P1gA0mK93vCG-p8sqxWi4YYqNIqpC7M63gcHfmNjSyF54Lp_ZvyGhV1ADErbOt6Fci1x9Wr_SzDHRDrm0QaSofRT\n(timed out)",
+  "cli_runs": [
+    {
+      "cmd": [
+        "status"
+      ],
+      "rc": 0,
+      "out": "Version: 1.1.79-hotfix.18\nAccount: Not logged in\n"
+    },
+    {
+      "cmd": [
+        "-p",
+        "reply with exactly: ok"
+      ],
+      "rc": 1,
+      "out": "Not logged in \u00b7 Please run /login\n"
+    }
+  ],
+  "plan_after": {
+    "tier": null,
+    "raw": "{\"errorCode\":\"Unauthorized\",\"errorMessage\":\"User not authenticated\",\"requestId\":\"7203d7a4-5de7-455f-9792-57585287bcaf\"}\n",
+    "login": "http401"
+  },
+  "verdict": "no-change"
+}
