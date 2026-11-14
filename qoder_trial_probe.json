@@ -1,0 +1,132 @@
+{
+  "path": "pt-3qKYQG3aZdyQ6I5ENwpnKu0u_01a1a4c3-cd3a-75fe-a816-26191226a630",
+  "userId": "01a1a4c3-8818-7ddc-a8e3-87e8f0ebf3a5",
+  "userName": "MadGullyAh27",
+  "before": {
+    "plan_http": 200,
+    "plan": {
+      "user_type": "personal_professional_trial",
+      "plan_tier_name": "Pro Trial",
+      "is_personal_version": true,
+      "is_paid_plan": false,
+      "is_highest_tier": false,
+      "feature_allowed": {
+        "wiki": true,
+        "quest": true,
+        "code_review": true,
+        "commit_indexing": true
+      },
+      "start_date": 1793765691795,
+      "end_date": 1794975291795
+    },
+    "status_http": 200,
+    "status": {
+      "id": "01a1a4c3-8818-7ddc-a8e3-87e8f0ebf3a5",
+      "name": "MadGullyAh27",
+      "userType": "personal_professional_trial",
+      "quota": 0,
+      "whitelistStatus": "PASS",
+      "avatarUrl": "https://qoder.com/users/01a1a4c3-8818-7ddc-a8e3-87e8f0ebf3a5/default/avatars",
+      "email": "heisterallyson@gmail.com",
+      "isQuotaExceeded": false,
+      "plan": "PLAN_TIER_PRO_TRIAL",
+      "isSubAccount": false,
+      "userTag": "Pro Trial",
+      "isPrivacyPolicyModifiable": false,
+      "nextResetAt": 1794975291795,
+      "featureSwitches": {
+        "allow_byok": 2
+      }
+    },
+    "tier": "PLAN_TIER_PRO_TRIAL",
+    "is_trial": true,
+    "is_paid": false,
+    "trial_end": 1794975291795,
+    "quota": 0,
+    "quota_exceeded": false,
+    "user_tag": "Pro Trial"
+  },
+  "after": {
+    "plan_http": 200,
+    "plan": {
+      "user_type": "personal_professional_trial",
+      "plan_tier_name": "Pro Trial",
+      "is_personal_version": true,
+      "is_paid_plan": false,
+      "is_highest_tier": false,
+      "feature_allowed": {
+        "wiki": true,
+        "quest": true,
+        "code_review": true,
+        "commit_indexing": true
+      },
+      "start_date": 1793765691795,
+      "end_date": 1794975291795
+    },
+    "status_http": 200,
+    "status": {
+      "id": "01a1a4c3-8818-7ddc-a8e3-87e8f0ebf3a5",
+      "name": "MadGullyAh27",
+      "userType": "personal_professional_trial",
+      "quota": 0,
+      "whitelistStatus": "PASS",
+      "avatarUrl": "https://qoder.com/users/01a1a4c3-8818-7ddc-a8e3-87e8f0ebf3a5/default/avatars",
+      "email": "heisterallyson@gmail.com",
+      "isQuotaExceeded": false,
+      "plan": "PLAN_TIER_PRO_TRIAL",
+      "isSubAccount": false,
+      "userTag": "Pro Trial",
+      "isPrivacyPolicyModifiable": false,
+      "nextResetAt": 1794975291795,
+      "featureSwitches": {
+        "allow_byok": 2
+      }
+    },
+    "tier": "PLAN_TIER_PRO_TRIAL",
+    "is_trial": true,
+    "is_paid": false,
+    "trial_end": 1794975291795,
+    "quota": 0,
+    "quota_exceeded": false,
+    "user_tag": "Pro Trial"
+  },
+  "claimCalls": [
+    {
+      "label": "eligibility",
+      "method": "GET",
+      "url": "https://center.qoder.sh/api/v2/activity/claim/eligibility",
+      "status": 200,
+      "body": "{\"code\":0,\"msg\":\"ok\",\"data\":[]}"
+    },
+    {
+      "label": "campaigns",
+      "method": "GET",
+      "url": "https://center.qoder.sh/sash/api/v1/me/campaigns",
+      "status": 200,
+      "body": "{\"shouldShowCampaignPopup\":false,\"uid\":\"01a1a4c3-8818-7ddc-a8e3-87e8f0ebf3a5\",\"showCampaign\":false,\"claimable\":false,\"campaignUrl\":\"\",\"campaigns\":[]}\n"
+    },
+    {
+      "label": "quota-reset",
+      "method": "GET",
+      "url": "https://center.qoder.sh/api/v2/activity/quota/reset/latest",
+      "status": 200,
+      "body": "{\"code\":0,\"msg\":\"ok\"}"
+    },
+    {
+      "label": "claim:__bogus__",
+      "method": "POST",
+      "url": "https://center.qoder.sh/api/v2/activity/claim?activityId=__bogus__",
+      "status": 200,
+      "body": "{\"code\":-1,\"msg\":\"Activity not found\"}"
+    }
+  ],
+  "posted": [
+    {
+      "activityId": "__bogus__",
+      "status": 200,
+      "body": "{\"code\":-1,\"msg\":\"Activity not found\"}"
+    }
+  ],
+  "verdict": "pro-trial-active",
+  "notes": []
+}

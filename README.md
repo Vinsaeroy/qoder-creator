@@ -229,6 +229,28 @@ python qoder_register.py --proxy http://user:pass@host:port
 
 ---
 
+## 🧪 Proof, not assumption — `qoder_trial_probe.py`
+
+Tiga hal diukur terpisah, biar nggak ada tebakan:
+
+```bash
+python qoder_trial_probe.py                       # plan akun default + status claim
+python qoder_trial_probe.py --path pt-… --raw     # dump tiap panggilan
+python qoder_trial_probe.py --path pt-… --activity-id <id> --post   # POST claim asli
+python qoder_trial_probe.py --trial-flip --referral pt-…            # butuh QREG_IMAP
+```
+
+Kalau tidak ada `activityId` dari server, probe bilang apa adanya dan tetap membuktikan
+**routing-nya hidup** — `POST /api/v2/activity/claim?activityId=__bogus__` dijawab
+`200 {"code":-1,"msg":"Activity not found"}`, artinya auth + path + parameter diterima,
+cuma id-nya belum diprovisikan. Tanpa id: `400 ... 'activityId' ... is not present`.
+
+`--trial-flip` = tes yang sebenarnya: register akun baru lewat referral, lalu poll
+`/api/v1/me/userplan` lewat sesi web akun itu sampai tier berubah dari Free. Butuh mailbox
+yang benar-benar bisa dibaca (`QREG_IMAP=user@host:app-password`).
+
+---
+
 ## 🎁 Claim Pro Trial — Account Path (`pt-…`)
 
 > **Yang menentukan "berhasil atau tidak" adalah `GET /api/v2/user/plan`.** Trial itu
