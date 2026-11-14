@@ -62,7 +62,7 @@ REGISTER_LOG = BASE_DIR / "qoder_reg_log.txt"
 NAV_TIMEOUT = 60_000
 STEP_TIMEOUT = 30_000
 MAIL_WAIT = 180
-MAIL_PROVIDER = os.environ.get("QREG_MAIL", "tmplol")   # tmplol | mailtm
+MAIL_PROVIDER = os.environ.get("QREG_MAIL", "inboxes")   # inboxes | mailnesia | tmplol | mailtm
 
 FIRST_NAMES = ["Aiden", "Nadia", "Rafael", "Yuki", "Tomas", "Selma", "Ivan",
                "Mira", "Dorian", "Lena", "Kai", "Farah", "Nils", "Anya"]
@@ -142,6 +142,41 @@ class Mailbox:
         return "\n".join(filter(None, [d.get("subject", ""), d.get("text", ""),
                                        d.get("html", "")]))
 
+    # ── inboxes.com ──
+    def _inboxes(self) -> list[dict]:
+        r = requests.get(f"https://inboxes.com/api/v2/inbox/{self.address}?token={self.token}",
+                         timeout=30)
+        r.raise_for_status()
+        out = []
+        for i, m in enumerate(r.json().get("msgs", []) or []):
+            out.append({"id": str(i), "subject": m.get("subject") or "", "idx": i})
+        return out
+
+    def _inboxes_body(self, mid: str) -> str:
+        r = requests.get(f"https://inboxes.com/api/v2/inbox/{self.address}?token={self.token}",
+                         timeout=30)
+        r.raise_for_status()
+        msgs = r.json().get("msgs", []) or []
+        i = int(mid)
+        if i >= len(msgs):
+            return ""
+        m = msgs[i]
+        return "\n".join(filter(None, [m.get("subject", ""), m.get("body", ""),
+                                       str(m.get("html", ""))]))
+
+    # ── mailnesia (public inbox) ──
+    def _mailnesia(self) -> list[dict]:
+        local = self.address.split("@")[0]
+        html = requests.get(f"https://mailnesia.com/mailbox/{local}", timeout=30).text
+        out = []
+        for m in re.finditer(r'href="https://mailnesia\.com/mail/([^"]+)"', html):
+            out.append({"id": m.group(1), "subject": "", "idx": 0})
+        return out
+
+    def _mailnesia_body(self, mid: str) -> str:
+        r = requests.get(f"https://mailnesia.com/mail/{mid}", timeout=30)
+        return re.sub(r"<[^>]+>", " ", r.text)
+
     # ── tempmail.lol ──
     def _tmplol(self) -> list[dict]:
         r = requests.get(f"https://api.tempmail.lol/v2/inbox?token={self.token}", timeout=30)
@@ -164,9 +199,17 @@ class Mailbox:
                                        d.get("html", "")]))
 
     def messages(self) -> list[dict]:
+        if self.kind == "inboxes":
+            return self._inboxes()
+        if self.kind == "mailnesia":
+            return self._mailnesia()
         return self._tmplol() if self.kind == "tmplol" else self._mailtm()
 
     def body(self, mid: str) -> str:
+        if self.kind == "inboxes":
+            return self._inboxes_body(mid)
+        if self.kind == "mailnesia":
+            return self._mailnesia_body(mid)
         return self._tmplol_body(mid) if self.kind == "tmplol" else self._mailtm_body(mid)
 
 
@@ -199,11 +242,28 @@ def _create_tmplol() -> Mailbox:
     return Mailbox(d["address"], kind="tmplol", token=d["token"])
 
 
-def new_mailbox(provider: str = "tmplol") -> Mailbox:
-    """Create a disposable inbox. provider: tmplol | mailtm | auto."""
-    order = {"tmplol": [_create_tmplol, _create_mailtm],
+def _create_inboxes() -> Mailbox:
+    r = requests.post("https://inboxes.com/api/v2/inbox", json={}, timeout=30)
+    r.raise_for_status()
+    addr = r.json().get("inbox") or ""
+    if not addr:
+        raise RuntimeError(f"inboxes.com: {r.text[:120]}")
+    return Mailbox(r.json()["inbox"], kind="inboxes", token=r.json().get("token", ""))
+
+
+def _create_mailnesia() -> Mailbox:
+    local = "".join(random.choice(string.ascii_lowercase + string.digits) for _ in range(12))
+    return Mailbox(f"{local}@mailnesia.com", kind="mailnesia")
+
+
+def new_mailbox(provider: str = "mailnesia") -> Mailbox:
+    """Create a disposable inbox. provider: mailnesia | tmplol | mailtm | auto."""
+    order = {"inboxes": [_create_inboxes, _create_mailnesia, _create_mailtm],
+             "mailnesia": [_create_mailnesia, _create_inboxes, _create_mailtm],
+             "tmplol": [_create_tmplol, _create_mailtm],
              "mailtm": [_create_mailtm, _create_tmplol],
-             "auto": [_create_tmplol, _create_mailtm]}.get(provider, [_create_tmplol])
+             "auto": [_create_mailnesia, _create_tmplol, _create_mailtm]}.get(
+                 provider, [_create_mailnesia])
     last = None
     for factory in order:
         try:
@@ -603,15 +663,29 @@ def register_one(browser, referral_code: str = DEFAULT_REFERRAL_CODE,
 
     api_trace: dict[str, tuple[int, str]] = {}
 
+    net_log: list[str] = []
+
+    def _on_request(req) -> None:
+        if "qoder.com/api" in req.url and req.method == "POST":
+            try:
+                data = (req.post_data or "")[:300]
+            except Exception:
+                data = ""
+            net_log.append(f"REQ {req.method} {req.url.split('?')[0]} body={data}")
+
     def _on_response(resp) -> None:
         url = resp.url.split("?")[0]
-        if "/api/v1/verificationCodes" in url or "/api/v1/users" in url:
-            try:
-                body = resp.text()[:300]
-            except Exception:
-                body = ""
+        if "qoder.com/api" not in url and "qoder.sh/api" not in url:
+            return
+        try:
+            body = resp.text()[:300]
+        except Exception:
+            body = ""
+        net_log.append(f"{resp.request.method} {url} -> {resp.status} {body[:180]}")
+        if "/verificationCodes" in url or "/api/v1/users" in url:
             api_trace[url] = (resp.status, body)
 
+    page.on("request", _on_request)
     page.on("response", _on_response)
 
     try:
@@ -675,8 +749,23 @@ def register_one(browser, referral_code: str = DEFAULT_REFERRAL_CODE,
             return res
 
         # ── step 4: e-mail code
-        for u, (st, b) in api_trace.items():
-            _p(f"  [api] {u} -> {st} {b[:160]}", log)
+        for line in net_log[-8:]:
+            _p(f"  [net] {line}", log)
+        if not api_trace:
+            _p("  [!] no verificationCodes/users call yet — clicking the submit button", log)
+            for label in ("Continue", "Sign up", "Create account", "Verify", "Next"):
+                try:
+                    page.get_by_role("button", name=re.compile(label, re.I)).first.click(timeout=2500)
+                except Exception:
+                    continue
+                time.sleep(2.5)
+                if api_trace:
+                    break
+            for u, (st, b) in api_trace.items():
+                _p(f"  [api] {u} -> {st} {b[:180]}", log)
+        if not api_trace:
+            _p("  [!] still nothing — dumping page text", log)
+            _p("  [body] " + page.inner_text("body")[:300].replace("\n", " | "), log)
         code = wait_for_code(mb, log=log)
         if not code:
             res.stage, res.detail = "mail", "no code in inbox"
@@ -802,7 +891,7 @@ if __name__ == "__main__":
     ap.add_argument("--keep-open", action="store_true")
     ap.add_argument("--proxy", default=None)
     ap.add_argument("--delay", type=float, default=10.0)
-    ap.add_argument("--mail", default=MAIL_PROVIDER, choices=["tmplol", "mailtm"],
+    ap.add_argument("--mail", default=MAIL_PROVIDER, choices=["inboxes", "mailnesia", "tmplol", "mailtm"],
                     help="disposable-mail provider")
     a = ap.parse_args()
 

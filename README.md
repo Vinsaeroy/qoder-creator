@@ -217,9 +217,15 @@ python qoder_register.py --headed --keep-open     # lihat browsernya
 python qoder_register.py --proxy http://user:pass@host:port
 ```
 
-> ⚠️ Captcha Aliyun dinamis — kalau gagal, script otomatis minta puzzle baru sampai 6x.
-> Domain mail.tm bisa saja ditolak Qoder; ganti domain/provider di `qoder_register.py` bila perlu.
-> Delay default antar akun 10s (+jitter) supaya tidak terlalu cepat.
+> ⚠️ Captcha Aliyun **butuh Xvfb** — headless murni sering ditolak `"Unable to verify the user is human"`
+> walaupun posisi puzzle-nya tepat. Jalankan lewat `xvfb-run -a ./venv/bin/python qoder_register.py --headed`.
+>
+> OTP Qoder berakhir di `POST /api/v1/verificationCodes → 200` tapi **mail-nya tidak pernah sampai**
+> ke domain disposable yang sudah dicoba (mail.tm `fldubai.com`, tempmail.lol, mailnesia.com,
+> inboxes.com `robot-mail.com`/`blondmail.com`/`temptami.com`) — semua kosong setelah 3 menit.
+> Artinya langkah terakhir butuh mailbox non-disposable; lihat catatan di bawah.
+>
+> Provider mailbox yang didukung: `--mail inboxes|mailnesia|tmplol|mailtm`.
 
 ---
 
