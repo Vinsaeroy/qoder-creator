@@ -151,6 +151,15 @@ def probe_path(path: str, realm: str = "intl", proxy: str | None = None,
     return p
 
 
+def _read_code(address: str, timeout: int = 150) -> str | None:
+    """Pull the newest Qoder code addressed to `address` out of the IMAP mailbox."""
+    import qoder_register as QR
+
+    mb = QR.Mailbox(address, QR.IMAP_ACCOUNT.split(":", 1)[1]
+                    if "@" in QR.IMAP_ACCOUNT else "", kind="imap")
+    return QR.wait_for_code(mb, timeout=timeout)
+
+
 def web_plan(email: str, password: str, log=print) -> dict:
     """
     Sign in on qoder.com with email + password and read the plan through the
@@ -165,15 +174,44 @@ def web_plan(email: str, password: str, log=print) -> dict:
                                      args=["--disable-blink-features=AutomationControlled",
                                            "--no-sandbox"])
         ctx = browser.new_context(viewport={"width": 1280, "height": 900})
-        ctx.add_init_script(QC.__dict__.get("STEALTH_JS", "") or "")
         page = ctx.new_page()
         try:
+            # step 1: email
             page.goto("https://qoder.com/users/sign-in", wait_until="domcontentloaded")
             page.wait_for_selector("#basic_email", timeout=30_000)
             page.fill("#basic_email", email)
-            page.fill("#basic_password", password)
-            page.click(".ant-checkbox-input")
-            page.get_by_role("button", name="Sign in").click()
+            page.get_by_role("button", name=re.compile("Continue", re.I)).first.click()
+            time.sleep(2.5)
+
+            # step 2a: password if the form asks for it
+            pwd = page.query_selector("#basic_password")
+            if pwd and pwd.is_visible():
+                pwd.fill(password)
+                for label in ("Sign in", "Continue", "Log in"):
+                    try:
+                        page.get_by_role("button", name=re.compile(label, re.I)).first.click(timeout=3000)
+                        break
+                    except Exception:
+                        continue
+            else:
+                # step 2b: passwordless — ask for a code and read it from the mailbox
+                for label in ("Send Code", "Send code", "Get code"):
+                    try:
+                        page.get_by_role("button", name=re.compile(label, re.I)).first.click(timeout=3000)
+                        break
+                    except Exception:
+                        continue
+                code = _read_code(email)
+                if code:
+                    boxes = page.query_selector_all("input[maxlength='1']")
+                    if boxes:
+                        boxes[0].click()
+                        page.keyboard.type(code, delay=70)
+                    else:
+                        f = page.query_selector("input[placeholder*='code' i]")
+                        if f:
+                            f.fill(code)
+                    time.sleep(3)
             time.sleep(6)
             r = ctx.request.get("https://qoder.com/api/v1/me/userplan",
                                 headers={"Accept": "application/json"})
@@ -209,6 +247,17 @@ def trial_flip(referral: str, realm: str = "intl", minutes: int = 45,
         out["flip"] = "not-registered"
         log("[flip] registration did not complete — nothing to poll")
         return out
+
+    # observation 0: the plan read with the fresh account's own session
+    out["before"] = res.plan_detail or res.status_detail or None
+    out["after"] = out["before"]
+    log(f"[flip] plan right after signup: {str(out['before'])[:240]}")
+    if out["before"] and "TRIAL" in json.dumps(out["before"]).upper():
+        out["flip"] = "pro-trial-granted"
+        log("[flip] PLAN IS ALREADY PRO TRIAL AT SIGNUP")
+        return out
+    out["observations"].append({"at": datetime.now(timezone.utc).isoformat(),
+                                "source": "registration-session", "plan": out["before"]})
 
     log(f"[flip] registered {res.email}; polling its plan for {minutes} min")
     while (time.time() - t0) / 60 < minutes:

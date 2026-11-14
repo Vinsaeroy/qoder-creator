@@ -720,6 +720,8 @@ class RegisterResult:
     plan: str | None = None
     credits: int | None = None
     user_id: str | None = None
+    plan_detail: dict = field(default_factory=dict)
+    status_detail: dict = field(default_factory=dict)
     started: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     def as_dict(self) -> dict:
@@ -956,6 +958,18 @@ def register_one(browser, referral_code: str = DEFAULT_REFERRAL_CODE,
             res.plan = (j.get("userPlan") or {}).get("name") or j.get("plan")
             res.credits = j.get("bigModelCredits") or j.get("credits")
             res.detail = "registered, session active"
+            # the session is live here — read the plan (this is the flip evidence)
+            try:
+                rp = ctx.request.get("https://qoder.com/api/v1/me/userplan",
+                                     headers={"Accept": "application/json"})
+                if rp.ok:
+                    res.plan_detail = rp.json()
+                rs = ctx.request.get("https://qoder.com/api/v1/me/status",
+                                     headers={"Accept": "application/json"})
+                if rs.ok:
+                    res.status_detail = rs.json()
+            except Exception:
+                pass
         else:
             res.stage, res.detail = "verify", f"registered but /me -> {r.status}"
             res.ok = r.status == 200
