@@ -364,27 +364,42 @@ def wait_for_code(mb: Mailbox, timeout: int = MAIL_WAIT, log=None) -> str | None
                 txt = mb.body(m["id"])
                 if not re.search(r"qoder", (m.get("subject", "") + txt).lower()):
                     continue
-                flat = re.sub(r"<[^>]+>", " ", txt)
+                flat = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", txt, flags=re.S)
+                flat = re.sub(r"<[^>]+>", " ", flat)
                 flat = re.sub(r"&nbsp;?", " ", flat)
+                flat = re.sub(r"\s+", " ", flat)
 
-                def digits(s: str) -> str:
-                    return re.sub(r"\D", "", s)
+                runs = [(m.group(0), re.sub(r"\D", "", m.group(0)), m.start())
+                        for m in _CODE_SPLIT_RE.finditer(flat)]
+                if not runs:
+                    continue
 
-                # prefer what sits next to the word "code", then anything 4-8 long
-                near = [digits(m.group(1)) for m in
-                        re.finditer(r"code[^0-9]{0,40}" + _CODE_SPLIT_RE.pattern, flat, re.I)]
-                cands = [c for c in near if 4 <= len(c) <= 8] or \
-                        [digits(m.group(1)) for m in _CODE_SPLIT_RE.finditer(flat)]
-                cands = [c for c in cands if 4 <= len(c) <= 8]
-                if cands:
-                    best = max(cands, key=len)      # the real code is the longest run
-                    return best
+                def score(item) -> float:
+                    _, dig, pos = item
+                    sc = 0.0
+                    if len(dig) == 6:
+                        sc += 4                       # Qoder codes are 6 digits
+                    elif len(dig) in (4, 5, 7, 8):
+                        sc += 1
+                    before = flat[max(0, pos - 40):pos].lower()
+                    after = flat[pos:pos + 40].lower()
+                    if "code" in before or "code" in after:
+                        sc += 5                       # next to the word "code"
+                    if dig[:2] in ("19", "20") and len(dig) == 4:
+                        sc -= 2                       # a bare year
+                    if re.search(r"expire", after) or re.search(r"expire", before):
+                        sc += 2
+                    return sc - pos / 100000.0        # earlier wins ties
+
+                runs.sort(key=score, reverse=True)
+                if score(runs[0]) > 0:
+                    return runs[0][1]
         except requests.HTTPError as e:
             code = getattr(getattr(e, "response", None), "status_code", None)
             if code == 429:
                 ra = getattr(e.response, "headers", {}).get("Retry-After")
                 wait = min(60, float(ra)) if (ra or "").isdigit() else 20.0
-                _p(f"  [!] mail.tm throttled, sleeping {wait:.0f}s", log)
+                _p(f"  [!] mail throttled, sleeping {wait:.0f}s", log)
                 time.sleep(wait)
                 continue
             if not warned:
