@@ -91,6 +91,7 @@ REALMS = {
     },
 }
 
+DEFAULT_ACCOUNT_PATH = "pt-3qKYQG3aZdyQ6I5ENwpnKu0u_01a1a4c3-cd3a-75fe-a816-26191226a630"
 BASE_DIR = Path(__file__).parent
 CLAIM_LOG = BASE_DIR / "qoder_claim_log.txt"
 CLAIM_RESULT = BASE_DIR / "qoder_claim_result.json"
@@ -606,7 +607,7 @@ def claim_menu(input_fn=input, print_fn=print) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser(description="Qoder Pro Trial claim via account path (PAT)")
     ap.add_argument("--path", action="append", default=[],
-                    help="Qoder account path / PAT (pt-…); repeatable")
+                    help=f"Qoder account path / PAT (pt-…) — default {DEFAULT_ACCOUNT_PATH[:14]}…")
     ap.add_argument("--paths", help="file with one path per line (EMAIL|PASS|PATH ok)")
     ap.add_argument("--realm", default="intl", choices=["intl", "cn"])
     ap.add_argument("--claim", action="store_true", help="actually POST the claim")
@@ -616,6 +617,8 @@ def main() -> int:
     a = ap.parse_args()
 
     paths = list(a.path)
+    if not paths and not a.paths:
+        paths = [DEFAULT_ACCOUNT_PATH]
     if a.paths:
         paths += load_paths(a.paths)
     paths = [p for p in dict.fromkeys(paths) if p]
@@ -626,9 +629,23 @@ def main() -> int:
                           wait_minutes=a.wait_minutes)
     CLAIM_RESULT.write_text(json.dumps([r.as_dict() for r in reports], indent=2))
     for r in reports:
-        status = "OK " if r.claimed else "   "
-        print(f"[{status}] {r.user_name or r.user_id} -> {r.verdict}"
-              + (f" claimed={','.join(r.claimed)}" if r.claimed else ""))
+        pl = r.plan or {}
+        print(f"\n{'='*58}\n{r.user_name or r.user_id}  ({r.user_id})")
+        print(f"  plan      : {pl.get('user_tag') or pl.get('tier') or '?'}"
+              f"  paid={pl.get('is_paid')}  trial={pl.get('is_trial')}")
+        end = pl.get("trial_end") or 0
+        if isinstance(end, (int, float)) and end > 0:
+            print("  valid to  : " + datetime.fromtimestamp(end / 1000, timezone.utc)
+                  .strftime("%Y-%m-%d %H:%M UTC"))
+        print(f"  quota     : {pl.get('quota')}  exceeded={pl.get('quota_exceeded')}")
+        feats = (pl.get("plan") or {}).get("feature_allowed") or {}
+        if feats:
+            print("  features  : " + ", ".join(f"{k}={v}" for k, v in feats.items()))
+        print(f"  verdict   : {r.verdict}")
+        for c in r.campaigns:
+            print(f"  campaign  : {c.get('campaignKey')} status={c.get('claimStatus')}")
+        if r.claimed:
+            print(f"  claimed   : {','.join(r.claimed)}")
     return 0 if all(r.verdict != "pat-invalid" for r in reports) else 1
 
 

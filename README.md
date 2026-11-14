@@ -260,6 +260,7 @@ Body request ditransform dulu: base64 → rotasi sepertiga → substitusi alfabe
 Header COSY dibangun dari AES-128-CBC (key = IV) + RSA-PKCS1v15 + md5 berantai.
 
 ```bash
+python qoder_claim.py                                    # pakai akun default (MadGullyAh27)
 python qoder_claim.py --path pt-xxxxxxxx                 # cek + laporan
 python qoder_claim.py --path pt-xxxxxxxx --claim         # benar-benar POST claim
 python qoder_claim.py --paths paths.txt --claim          # batch (1 path per baris)
