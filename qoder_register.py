@@ -25,6 +25,9 @@ Standalone use:
 from __future__ import annotations
 
 import base64
+import email
+import imaplib
+import re as _re
 import io
 import json
 import os
@@ -114,7 +117,8 @@ class Mailbox:
     address: str
     password: str = ""
     token: str = ""
-    kind: str = "mailtm"          # mailtm | tmplol
+    kind: str = "mailtm"          # mailtm | tmplol | mailnesia | inboxes | imap
+    host: str = ""
 
     # ── mail.tm ──
     def refresh(self) -> None:
@@ -141,6 +145,54 @@ class Mailbox:
         d = r.json()
         return "\n".join(filter(None, [d.get("subject", ""), d.get("text", ""),
                                        d.get("html", "")]))
+
+    # ── IMAP (real mailbox, plus-address) ──
+    def _imap_conn(self):
+        host = self.host or ("imap.gmail.com" if self.address.endswith("gmail.com")
+                             else "outlook.office365.com")
+        box = imaplib.IMAP4_SSL(host)
+        box.login(self.address, self.password)
+        box.select("INBOX")
+        return box
+
+    def _imap(self) -> list[dict]:
+        box = self._imap_conn()
+        try:
+            typ, data = box.search(None, "ALL")
+            out = []
+            for num in (data[0].split()[-10:] if data and data[0] else []):
+                out.append({"id": num.decode(), "subject": "", "idx": 0})
+            return out
+        finally:
+            try:
+                box.logout()
+            except Exception:
+                pass
+
+    def _imap_body(self, mid: str) -> str:
+        box = self._imap_conn()
+        try:
+            typ, data = box.fetch(mid.encode(), "(RFC822)")
+            msg = email.message_from_bytes(data[0][1])
+            parts = [msg.get("Subject", "")]
+            if msg.is_multipart():
+                for part in msg.walk():
+                    if part.get_content_type() in ("text/plain", "text/html"):
+                        try:
+                            parts.append(part.get_payload(decode=True).decode("utf-8", "ignore"))
+                        except Exception:
+                            pass
+            else:
+                try:
+                    parts.append(msg.get_payload(decode=True).decode("utf-8", "ignore"))
+                except Exception:
+                    pass
+            return "\n".join(parts)
+        finally:
+            try:
+                box.logout()
+            except Exception:
+                pass
 
     # ── inboxes.com ──
     def _inboxes(self) -> list[dict]:
@@ -199,6 +251,8 @@ class Mailbox:
                                        d.get("html", "")]))
 
     def messages(self) -> list[dict]:
+        if self.kind == "imap":
+            return self._imap()
         if self.kind == "inboxes":
             return self._inboxes()
         if self.kind == "mailnesia":
@@ -206,6 +260,8 @@ class Mailbox:
         return self._tmplol() if self.kind == "tmplol" else self._mailtm()
 
     def body(self, mid: str) -> str:
+        if self.kind == "imap":
+            return self._imap_body(mid)
         if self.kind == "inboxes":
             return self._inboxes_body(mid)
         if self.kind == "mailnesia":
@@ -256,9 +312,23 @@ def _create_mailnesia() -> Mailbox:
     return Mailbox(f"{local}@mailnesia.com", kind="mailnesia")
 
 
-def new_mailbox(provider: str = "mailnesia") -> Mailbox:
+IMAP_ACCOUNT = os.environ.get("QREG_IMAP", "")   # user@gmail.com:app-password
+
+
+def _create_imap() -> Mailbox:
+    """Plus-addressed real mailbox: `user+qoderN@gmail.com`, same inbox."""
+    if not IMAP_ACCOUNT or ":" not in IMAP_ACCOUNT:
+        raise RuntimeError("set QREG_IMAP=user@host:app-password")
+    addr, pw = IMAP_ACCOUNT.split(":", 1)
+    local, domain = addr.split("@", 1)
+    tag = "q" + "".join(random.choice(string.ascii_lowercase + string.digits) for _ in range(8))
+    return Mailbox(f"{local}+{tag}@{domain}", pw, kind="imap")
+
+
+def new_mailbox(provider: str = "inboxes") -> Mailbox:
     """Create a disposable inbox. provider: mailnesia | tmplol | mailtm | auto."""
-    order = {"inboxes": [_create_inboxes, _create_mailnesia, _create_mailtm],
+    order = {"imap": [_create_imap, _create_inboxes],
+             "inboxes": [_create_inboxes, _create_mailnesia, _create_mailtm],
              "mailnesia": [_create_mailnesia, _create_inboxes, _create_mailtm],
              "tmplol": [_create_tmplol, _create_mailtm],
              "mailtm": [_create_mailtm, _create_tmplol],
@@ -439,30 +509,55 @@ def solve_aliyun_slider(page: Page, attempts: int = 6, log=None,
             "() => { const e = document.querySelector('#aliyunCaptcha-puzzle');"
             " return e ? e.getBoundingClientRect().x : null; }")
 
+    def _images_ready() -> dict | None:
+        g = page.evaluate("""() => {
+            const i = document.querySelector('#aliyunCaptcha-img'),
+                  p = document.querySelector('#aliyunCaptcha-puzzle');
+            return i && p ? {bg: i.src, pz: p.src} : null;
+        }""")
+        if g and _b64_to_arr(g["bg"]) is not None and _b64_to_arr(g["pz"]) is not None:
+            return g
+        return None
+
     def reload_puzzle() -> bool:
-        """Ask Aliyun for a fresh challenge and wait until its images decode."""
-        for attempt in range(6):
-            for sel in ("#aliyunCaptcha-captcha-body", "#aliyunCaptcha-img-box",
-                        "#aliyunCaptcha-sliding-slider"):
-                el = page.query_selector(sel)
-                if not el:
-                    continue
-                try:
-                    el.click(timeout=1200)
-                    break
-                except Exception:
-                    continue
-            time.sleep(1.3)
-            g = page.evaluate("""() => {
-                const i = document.querySelector('#aliyunCaptcha-img'),
-                      p = document.querySelector('#aliyunCaptcha-puzzle');
-                return i && p ? {bg: i.src, pz: p.src} : null;
+        """
+        Fetch a fresh challenge.
+
+        Aliyun does not expose a stable refresh hook, so try, in order: the
+        refresh icon in the image's top-right corner, the error overlay, then
+        close the window and re-open it from the 'Click to verify' bar.
+        """
+        for _ in range(5):
+            box = page.evaluate("""() => {
+                const e = document.querySelector('#aliyunCaptcha-img-box');
+                if (!e) return null;
+                const r = e.getBoundingClientRect();
+                return {x: r.right - 16, y: r.top + 16};
             }""")
-            if g and _b64_to_arr(g["bg"]) is not None and _b64_to_arr(g["pz"]) is not None:
-                if page.query_selector("#aliyunCaptcha-sliding-slider"):
+            if box:
+                page.mouse.click(box["x"], box["y"])
+                time.sleep(0.9)
+            if _images_ready():
+                return True
+            if box:
+                page.mouse.click(box["x"], box["y"])
+                time.sleep(1.2)
+                continue
+
+            # window gone: re-open from the verify bar
+            body = page.query_selector("#aliyunCaptcha-captcha-body")
+            if body:
+                try:
+                    body.click(timeout=1500)
+                except Exception:
+                    pass
+                time.sleep(1.5)
+                if _images_ready():
                     return True
+            time.sleep(0.6)
         return False
 
+    reload_fails = 0
     for n in range(1, attempts + 1):
         try:
             page.wait_for_selector("#aliyunCaptcha-sliding-slider", timeout=STEP_TIMEOUT)
@@ -489,8 +584,11 @@ def solve_aliyun_slider(page: Page, attempts: int = 6, log=None,
 
         bg_arr, pz_arr = _b64_to_arr(geo["bg"]), _b64_to_arr(geo["pz"])
         if bg_arr is None or pz_arr is None:
-            _p("  [!] captcha images not ready, reloading", log)
-            reload_puzzle()
+            reload_fails += 1
+            _p(f"  [!] captcha images not ready, reloading ({reload_fails})", log)
+            if reload_fails > 2 or not reload_puzzle():
+                _p("  [!] puzzle will not refresh — giving up on this attempt", log)
+                return False
             continue
 
         off_img = _gap_offset(bg_arr, pz_arr)
@@ -565,7 +663,10 @@ def solve_aliyun_slider(page: Page, attempts: int = 6, log=None,
 
         st = page.evaluate(_CAP_STATE_JS)
         _p(f"  [!] captcha rejected ({st.get('text', '')!r}), next attempt", log)
-        reload_puzzle()
+        if not reload_puzzle():
+            _p("  [!] could not get a fresh puzzle — stopping", log)
+            return False
+        reload_fails = 0
     return False
 
 
@@ -891,7 +992,7 @@ if __name__ == "__main__":
     ap.add_argument("--keep-open", action="store_true")
     ap.add_argument("--proxy", default=None)
     ap.add_argument("--delay", type=float, default=10.0)
-    ap.add_argument("--mail", default=MAIL_PROVIDER, choices=["inboxes", "mailnesia", "tmplol", "mailtm"],
+    ap.add_argument("--mail", default=MAIL_PROVIDER, choices=["imap", "inboxes", "mailnesia", "tmplol", "mailtm"],
                     help="disposable-mail provider")
     a = ap.parse_args()
 
