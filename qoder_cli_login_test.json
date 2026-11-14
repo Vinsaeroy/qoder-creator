@@ -1,21 +1,43 @@
 {
   "email": "fuadi.a.fr.izalni@gmail.com",
-  "started": "2026-11-14T03:57:10.023135+00:00",
+  "started": "2026-11-14T04:09:02.507350+00:00",
   "plan_before": {
-    "tier": null,
-    "raw": "{\"errorCode\":\"Unauthorized\",\"errorMessage\":\"User not authenticated\",\"requestId\":\"8bce3cd6-9fab-4e8a-8c17-9726df19630b\"}\n",
-    "login": "http401"
+    "tier": "PLAN_TIER_FREE",
+    "raw": {
+      "id": "01a1d82a-eacf-7a4a-940c-7f4861ebf5d2",
+      "user_id": "01a1d82a-eacd-741e-b5b8-e0217b9a10c0",
+      "plan_tier": "PLAN_TIER_FREE",
+      "plan_tier_name": "PLAN_TIER_FREE",
+      "is_highest_tier": false,
+      "capabilities": [
+        "personal.qmind"
+      ],
+      "status": "USER_PLAN_STATUS_ACTIVE",
+      "start_date": 1794628053711,
+      "end_date": 253402214400000,
+      "billing_cycle": "",
+      "amount_paid": 0,
+      "currency": "USD",
+      "auto_renew": false,
+      "created_at": 1794628053711,
+      "updated_at": 1794628053711,
+      "is_renewed": false,
+      "next_refresh_date": 253402214400000,
+      "manual_renewal_supported": false,
+      "manual_renewal_unsupported_reason": "plan_not_eligible"
+    },
+    "login": "ok"
   },
-  "device_url": "https://qoder.com/device/selectAccounts?challenge=M0bdIPsmmXDkNSW0qXI_2uEGHnDjbDVYHoZWeWyVg1s&challenge_method=S256&nonce=94b0f4a2-b151-4fa9-8a06-02fdd420b1a8&machine_id=33570c71-ec48-4507-b18b-558dc1d53c45&client_id=e883ade2-e6e3-4d6d-adf7-f92ceff5fdcb&machine_token=P1gA0mK93vCG-p8sqxWi4YYqNIqpC7M63gcHfmNjSyF54Lp_ZvyGhV1ADErbOt6Fci1x9Wr_SzDHRDrm0QaSofRT",
+  "device_url": "https://qoder.com/device/selectAccounts?challenge=jmlMRC4ILxrEmoNJuCFGn3MPKxgWajFZnaN7kYy0g20&challenge_method=S256&nonce=9dddfe99-93da-478a-8aad-55fcd5de86ab&machine_id=33570c71-ec48-4507-b18b-558dc1d53c45&client_id=e883ade2-e6e3-4d6d-adf7-f92ceff5fdcb&machine_token=P1gA0mK93vCG-p8sqxWi4YYqNIqpC7M63gcHfmNjSyF54Lp_ZvyGhV1ADErbOt6Fci1x9Wr_SzDHRDrm0QaSofRT",
   "browser": "approved",
-  "cli_login": " in your browser to sign in:\n\n  https://qoder.com/device/selectAccounts?challenge=M0bdIPsmmXDkNSW0qXI_2uEGHnDjbDVYHoZWeWyVg1s&challenge_method=S256&nonce=94b0f4a2-b151-4fa9-8a06-02fdd420b1a8&machine_id=33570c71-ec48-4507-b18b-558dc1d53c45&client_id=e883ade2-e6e3-4d6d-adf7-f92ceff5fdcb&machine_token=P1gA0mK93vCG-p8sqxWi4YYqNIqpC7M63gcHfmNjSyF54Lp_ZvyGhV1ADErbOt6Fci1x9Wr_SzDHRDrm0QaSofRT\n(timed out)",
+  "cli_login": "  https://qoder.com/device/selectAccounts?challenge=jmlMRC4ILxrEmoNJuCFGn3MPKxgWajFZnaN7kYy0g20&challenge_method=S256&nonce=9dddfe99-93da-478a-8aad-55fcd5de86ab&machine_id=33570c71-ec48-4507-b18b-558dc1d53c45&client_id=e883ade2-e6e3-4d6d-adf7-f92ceff5fdcb&machine_token=P1gA0mK93vCG-p8sqxWi4YYqNIqpC7M63gcHfmNjSyF54Lp_ZvyGhV1ADErbOt6Fci1x9Wr_SzDHRDrm0QaSofRT\n\nLogin successful! Welcome, Anya Duarte.\n",
   "cli_runs": [
     {
       "cmd": [
         "status"
       ],
       "rc": 0,
-      "out": "Version: 1.1.79-hotfix.18\nAccount: Not logged in\n"
+      "out": "Version: 1.1.79-hotfix.18\nUsername: Anya Duarte\nEmail: fuadi.a.fr.izalni@gmail.com\nAvatar: https://qoder.com/users/01a1d82a-eacd-741e-b5b8-e0217b9a10c0/default/avatars\nLogin Method: browser\nAuth Source: local\n"
     },
     {
       "cmd": [
@@ -23,12 +45,12 @@
         "reply with exactly: ok"
       ],
       "rc": 1,
-      "out": "Not logged in \u00b7 Please run /login\n"
+      "out": "Sorry, something went wrong. Please try again. Report Issue (input /feedback)"
     }
   ],
   "plan_after": {
     "tier": null,
-    "raw": "{\"errorCode\":\"Unauthorized\",\"errorMessage\":\"User not authenticated\",\"requestId\":\"7203d7a4-5de7-455f-9792-57585287bcaf\"}\n",
+    "raw": "{\"errorCode\":\"Unauthorized\",\"errorMessage\":\"User not authenticated\",\"requestId\":\"8ac7cbd8-7c68-4cf3-95af-cf01d258309f\"}\n",
     "login": "http401"
   },
   "verdict": "no-change"

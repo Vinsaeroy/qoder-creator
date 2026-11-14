@@ -73,7 +73,9 @@ XcW+ML9FoCI6AOvOzwIDAQAB
 
 QODER_APPCODE = "cosy"
 QODER_SIG_SECRET = "d2FyLCB3YXIgbmV2ZXIgY2hhbmdlcw=="
-QODER_VERSION = os.environ.get("QODER_VERSION", "1.1.64")
+# The desktop client moves; a stale value here gets the claim rejected, so this
+# tracks the current build (overridable with QODER_VERSION).
+QODER_VERSION = os.environ.get("QODER_VERSION", "1.1.86")
 QODER_MACHINE_OS = os.environ.get("QODER_MACHINE_OS", "aarch64_macos")
 
 REALMS = {
