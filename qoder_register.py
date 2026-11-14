@@ -320,6 +320,7 @@ def _create_imap() -> Mailbox:
     if not IMAP_ACCOUNT or ":" not in IMAP_ACCOUNT:
         raise RuntimeError("set QREG_IMAP=user@host:app-password")
     addr, pw = IMAP_ACCOUNT.split(":", 1)
+    pw = pw.replace(" ", "")          # Gmail shows app passwords in 4 spaced groups
     local, domain = addr.split("@", 1)
     tag = "q" + "".join(random.choice(string.ascii_lowercase + string.digits) for _ in range(8))
     return Mailbox(f"{local}+{tag}@{domain}", pw, kind="imap")
