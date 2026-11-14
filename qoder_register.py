@@ -346,6 +346,9 @@ def new_mailbox(provider: str = "inboxes") -> Mailbox:
 
 
 _CODE_RE = re.compile(r"\b(\d{4,8})\b")
+# Codes are shown with stray markup/spacing ("208 0 12"), so match digit groups
+# that may be separated by spaces or hyphens and then join them.
+_CODE_SPLIT_RE = re.compile(r"(?<!\d)(\d(?:[\s\u00a0\-]?\d){3,7})(?!\d)")
 
 
 def wait_for_code(mb: Mailbox, timeout: int = MAIL_WAIT, log=None) -> str | None:
@@ -361,9 +364,21 @@ def wait_for_code(mb: Mailbox, timeout: int = MAIL_WAIT, log=None) -> str | None
                 txt = mb.body(m["id"])
                 if not re.search(r"qoder", (m.get("subject", "") + txt).lower()):
                     continue
-                cands = [c for c in _CODE_RE.findall(txt) if 4 <= len(c) <= 8]
+                flat = re.sub(r"<[^>]+>", " ", txt)
+                flat = re.sub(r"&nbsp;?", " ", flat)
+
+                def digits(s: str) -> str:
+                    return re.sub(r"\D", "", s)
+
+                # prefer what sits next to the word "code", then anything 4-8 long
+                near = [digits(m.group(1)) for m in
+                        re.finditer(r"code[^0-9]{0,40}" + _CODE_SPLIT_RE.pattern, flat, re.I)]
+                cands = [c for c in near if 4 <= len(c) <= 8] or \
+                        [digits(m.group(1)) for m in _CODE_SPLIT_RE.finditer(flat)]
+                cands = [c for c in cands if 4 <= len(c) <= 8]
                 if cands:
-                    return cands[0]
+                    best = max(cands, key=len)      # the real code is the longest run
+                    return best
         except requests.HTTPError as e:
             code = getattr(getattr(e, "response", None), "status_code", None)
             if code == 429:
@@ -711,11 +726,19 @@ def _save(res: RegisterResult) -> None:
 
 def _fill_code(page: Page, code: str) -> bool:
     """Type the OTP into whatever input shape Qoder shows."""
-    # 1) six/one-per-box inputs
+    # 1) one-char boxes: focus the first and type, letting the widget advance
     boxes = page.query_selector_all("input[maxlength='1']")
-    if len(boxes) >= len(code) >= 4:
-        for box, ch in zip(boxes, code):
-            box.fill(ch)
+    if boxes:
+        boxes[0].click()
+        page.keyboard.type(code, delay=random.uniform(40, 90))
+        typed = "".join((b.input_value() or "") for b in boxes)
+        if len(typed) >= min(4, len(code)):
+            return True
+        for box, ch in zip(boxes, code):        # fallback: fill one by one
+            try:
+                box.fill(ch)
+            except Exception:
+                pass
         return True
     # 2) a single dedicated code field
     for sel in ("input[autocomplete='one-time-code']", "input#code", "input[name='code']",
@@ -894,6 +917,14 @@ def register_one(browser, referral_code: str = DEFAULT_REFERRAL_CODE,
         time.sleep(5)
 
         # ── verify with an authenticated API call
+        # The create call (POST /api/v1/users) sets the session cookie, but the
+        # page only navigates after the OTP is accepted — reload once first.
+        time.sleep(4)
+        try:
+            page.goto(HOME_URL, wait_until="domcontentloaded")
+            time.sleep(2)
+        except Exception:
+            pass
         r = ctx.request.get(ME_API, headers={"Accept": "application/json"})
         if r.ok:
             j = r.json()
